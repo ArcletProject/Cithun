@@ -1,2 +1,3 @@
 # Reimelin
-Bot SDK for QQ Channel
+WIP 
+咕咕咕
