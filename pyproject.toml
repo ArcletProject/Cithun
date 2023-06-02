@@ -1,0 +1,17 @@
+[tool.pdm]
+
+[project]
+name = "arclet-cithun"
+version = "0.1.0"
+description = "Permission system"
+authors = [
+    {name = "RF-Tar-Railt", email = "rf_tar_railt@qq.com"},
+]
+dependencies = []
+requires-python = ">=3.9"
+readme = "README.md"
+license = {text = "MIT"}
+
+[build-system]
+requires = ["pdm-backend"]
+build-backend = "pdm.backend"
