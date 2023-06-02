@@ -1,4 +1,4 @@
-from src.arclet.cithun.node import Node, ROOT, NODE_CHILD_MAP
+from arclet.cithun.node import Node, ROOT, NODE_CHILD_MAP
 from pprint import pprint
 
 FOOD = Node("food", isdir=True)

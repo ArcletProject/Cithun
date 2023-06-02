@@ -1,5 +1,5 @@
-from src.arclet.cithun.node import NodeState
-from src.arclet.cithun.user import User
+from arclet.cithun.node import NodeState
+from arclet.cithun.user import User
 
 JACK = User("jack")
 JACK.set("food/fruit/apple", NodeState("vma"))
