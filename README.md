@@ -16,7 +16,8 @@ user = User('cithun')
 user.join(admin)
 
 user.get("/foo/bar/baz/") # vma
-user.set("/foo/bar/baz/qux")
-user.set("/foo/bar/baz/", NodeState("v-a"))
-user.modify("/foo/bar/baz/qux", NodeState(7))  # False as failed
+user.suset("/foo/bar/baz/qux")
+user.available("/foo/bar/baz/qux") # False as default perm of qux is vm-
+user.suset("/foo/bar/baz/", NodeState("v-a"))
+user.set("/foo/bar/baz/qux", NodeState(7))  # False as failed
 ```

@@ -111,7 +111,7 @@ class Node:
         if self.parent is not None:
             if self.parent.isfile:
                 raise ValueError(f"parent {self.parent} is a file")
-            NODE_CHILD_MAP[self.parent][self.name] = self
+            NODE_CHILD_MAP.setdefault(self.parent, {})[self.name] = self
 
     def move(self, new_parent: Node):
         if new_parent.isfile:
