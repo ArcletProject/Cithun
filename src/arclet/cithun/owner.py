@@ -1,13 +1,10 @@
 from __future__ import annotations
 
-from typing import Protocol
+from typing import Union
+from typing_extensions import TypeAlias
 from dataclasses import dataclass, field
 from .node import Node, NodeState
-from .context import Context
-
-
-class Owner(Protocol):
-    nodes: dict[Node, dict[Context, NodeState]]
+from .ctx import Context
 
 
 @dataclass(eq=True, unsafe_hash=True)
@@ -29,3 +26,6 @@ class User:
     name: str
     nodes: dict[Node, dict[Context, NodeState]] = field(default_factory=dict)
     groups: list[Group] = field(default_factory=list)
+
+
+Owner: TypeAlias = Union[User, Group]

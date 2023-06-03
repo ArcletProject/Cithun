@@ -1,33 +1,54 @@
 from __future__ import annotations
 
-from collections import ChainMap
 from .node import Node, NodeState, ROOT, NODE_CHILD_MAP
-from .owner import Owner, Group, User
-from .context import Context
+from .owner import Owner, User
+from .ctx import Context
 
 
-def _get(owner: Owner, node: Node, context: Context):
+def _get_nodes(owner: Owner):
+    nodes = {}
+    gps = []
+    if isinstance(owner, User):
+        for gp in owner.groups:
+            if gp.inherit:
+                gps.extend(gp.get_inherits())
+            gps.append(gp)
+        gps = list(set(gps))
+        gps.sort(key=lambda x: x.priority, reverse=True)
+        gps.append(owner)
+    else:
+        if owner.inherit:
+            gps.extend(owner.get_inherits())
+        gps.append(owner)
+        gps.sort(key=lambda x: x.priority, reverse=True)
+    for gp in gps:
+        for node, data in gp.nodes.items():
+            if node not in nodes:
+                nodes[node] = data.copy()
+            else:
+                nodes[node].update(data)
+    return nodes
+
+
+def _get(nodes: dict, node: Node, context: Context):
     return next(
-        (
-            state
-            for ctx, state in owner.nodes[node].items()
-            if ctx.satisfied(context, "all")
-        ),
+        (state for ctx, state in nodes[node].items() if ctx.satisfied(context, "all")),
         None,
     )
 
 
-def suget(
+def sget(
     owner: Owner, node: Node | str, context: Context | None = None
 ) -> NodeState | None:
     """得到具体节点的状态，不做权限判断"""
     _node = node if isinstance(node, Node) else ROOT.from_path(node)
-    if _node not in owner.nodes:
+    _nodes = _get_nodes(owner)
+    if _node not in _nodes:
         return
-    return _get(owner, _node, context or Context())
+    return _get(_nodes, _node, context or Context.current())
 
 
-def suadd(
+def sadd(
     owner: Owner,
     node: Node | str,
     state: NodeState | None = None,
@@ -35,18 +56,19 @@ def suadd(
 ):
     """添加节点，不做权限判断"""
     _node = node if isinstance(node, Node) else ROOT.from_path(node)
-    _ctx = context or Context()
+    _ctx = context or Context.current()
+    _nodes = _get_nodes(owner)
     _prev = _node
     while _prev.parent:
-        if _prev.parent not in owner.nodes:
+        if _prev.parent not in _nodes:
             owner.nodes[_prev.parent] = {_ctx: NodeState(7)}
-        if not _get(owner, _prev.parent, _ctx):
+        elif not _get(_nodes, _prev.parent, _ctx):
             owner.nodes[_prev.parent][_ctx] = NodeState(7)
         _prev = _prev.parent
-    if _node in owner.nodes and _get(owner, _node, _ctx):
+    if _node in _nodes and _get(_nodes, _node, _ctx):
         raise ValueError(f"node {_node} already exists")
     _node.isdir = not _node.isdir
-    if _node in owner.nodes and _get(owner, _node, _ctx):
+    if _node in _nodes and _get(_nodes, _node, _ctx):
         raise ValueError(f"node {_node} already exists")
     _node.isdir = not _node.isdir
     owner.nodes.setdefault(_node, {}).setdefault(
@@ -54,12 +76,12 @@ def suadd(
     )
 
 
-def suset(
+def smodify(
     owner: Owner, node: Node | str, state: NodeState, context: Context | None = None
 ):
     """设置具体节点的状态，不做权限判断"""
     _node = node if isinstance(node, Node) else ROOT.from_path(node)
-    _ctx = context or Context()
+    _ctx = context or Context.current()
     if _node not in owner.nodes:
         _node.isdir = not _node.isdir
     if _node not in owner.nodes:
@@ -67,10 +89,10 @@ def suset(
     owner.nodes[_node][_ctx] = state
 
 
-def sudelete(owner: Owner, node: Node | str, context: Context | None = None):
+def sdelete(owner: Owner, node: Node | str, context: Context | None = None):
     """删除节点，不做权限判断"""
     _node = node if isinstance(node, Node) else ROOT.from_path(node)
-    _ctx = context or Context()
+    _ctx = context or Context.current()
     if _node not in owner.nodes:
         _node.isdir = not _node.isdir
     if _node not in owner.nodes:
@@ -80,7 +102,7 @@ def sudelete(owner: Owner, node: Node | str, context: Context | None = None):
         owner.nodes.pop(_node)
     if _node.isdir:
         for child in NODE_CHILD_MAP[_node].values():
-            sudelete(owner, child, _ctx)
+            sdelete(owner, child, _ctx)
 
 
 def get(
@@ -93,17 +115,18 @@ def get(
     若节点自己的权限不包含v时，该节点的状态不可获取
     """
     _node = node if isinstance(node, Node) else ROOT.from_path(node)
-    _ctx = context or Context()
+    _ctx = context or Context.current()
+    _nodes = _get_nodes(owner)
     _prev = _node
     while _prev.parent:
-        if _prev.parent in owner.nodes and (
-            (res := _get(owner, _prev.parent, _ctx)) and res.state & 5 != 5
+        if _prev.parent in _nodes and (
+            (res := _get(_nodes, _prev.parent, _ctx)) and res.state & 5 != 5
         ):
             return
         _prev = _prev.parent
-    if _node not in owner.nodes:
+    if _node not in _nodes:
         raise ValueError(f"node {_node} not exists")
-    res = _get(owner, _node, context or Context())
+    res = _get(_nodes, _node, context or Context.current())
     if not res:
         raise ValueError(f"node {_node} not exists in context {_ctx}")
     if res.state & 4 == 4:
@@ -118,20 +141,21 @@ def add(
 ):
     """设置具体节点的状态，若该节点的父节点不可修改，则不会修改该节点的状态"""
     _node = node if isinstance(node, Node) else ROOT.from_path(node)
-    _ctx = context or Context()
+    _ctx = context or Context.current()
+    _nodes = _get_nodes(owner)
     _prev = _node
     while _prev.parent:
-        if _prev.parent not in owner.nodes:
+        if _prev.parent not in _nodes:
             owner.nodes[_prev.parent] = {_ctx: NodeState(7)}
-        if not (res := _get(owner, _prev.parent, _ctx)):
+        elif not (res := _get(_nodes, _prev.parent, _ctx)):
             owner.nodes[_prev.parent][_ctx] = NodeState(7)
         elif res.state & 7 != 7:
             return False
         _prev = _prev.parent
-    if _node in owner.nodes and _get(owner, _node, _ctx):
+    if _node in _nodes and _get(_nodes, _node, _ctx):
         raise ValueError(f"node {_node} already exists")
     _node.isdir = not _node.isdir
-    if _node in owner.nodes and _get(owner, _node, _ctx):
+    if _node in _nodes and _get(_nodes, _node, _ctx):
         raise ValueError(f"node {_node} already exists")
     _node.isdir = not _node.isdir
     owner.nodes.setdefault(_node, {}).setdefault(
@@ -140,24 +164,25 @@ def add(
     return True
 
 
-def set(
+def modify(
     owner: Owner, node: Node | str, state: NodeState, context: Context | None = None
 ):
     """设置具体节点的状态，若该节点的父节点不可修改，则不会修改该节点的状态"""
     _node = node if isinstance(node, Node) else ROOT.from_path(node)
-    _ctx = context or Context()
+    _ctx = context or Context.current()
+    _nodes = _get_nodes(owner)
     _prev = _node
     while _prev.parent:
-        if _prev.parent in owner.nodes and (
-            (res := _get(owner, _prev.parent, _ctx)) and res.state & 7 != 7
+        if _prev.parent in _nodes and (
+            (res := _get(_nodes, _prev.parent, _ctx)) and res.state & 7 != 7
         ):
             return False
         _prev = _prev.parent
-    if _node not in owner.nodes:
+    if _node not in _nodes:
         _node.isdir = not _node.isdir
-    if _node not in owner.nodes:
+    if _node not in _nodes:
         raise ValueError(f"node {_node} not exists")
-    res = _get(owner, _node, context or Context())
+    res = _get(_nodes, _node, context or Context.current())
     if not res:
         raise ValueError(f"node {_node} not exists in context {_ctx}")
     if res.state & 2 == 2:
@@ -169,11 +194,11 @@ def set(
 def delete(owner: Owner, node: Node | str, context: Context | None = None):
     """删除具体节点的状态，若该节点的父节点不可修改，则不会修改该节点的状态"""
     _node = node if isinstance(node, Node) else ROOT.from_path(node)
-    _ctx = context or Context()
+    _ctx = context or Context.current()
     _prev = _node
     while _prev.parent:
         if _prev.parent in owner.nodes and (
-            (res := _get(owner, _prev.parent, _ctx)) and res.state & 7 != 7
+            (res := _get(owner.nodes, _prev.parent, _ctx)) and res.state & 7 != 7
         ):
             return False
         _prev = _prev.parent
@@ -194,7 +219,7 @@ def delete(owner: Owner, node: Node | str, context: Context | None = None):
         if not owner.nodes[_node]:
             owner.nodes.pop(_node)
         for child in NODE_CHILD_MAP[_node].values():
-            sudelete(owner, child, _ctx)
+            sdelete(owner, child, _ctx)
         return True
     return False
 
@@ -203,7 +228,7 @@ def available(
     owner: Owner, node: Node | str, context: Context | None = None
 ) -> bool | None:
     """查看具体节点的状态，若该节点的父节点不可用，则不会返回该节点的状态"""
-    res = suget(owner, node, context)
+    res = sget(owner, node, context)
     if res is None:
         return
     return res.state & 1 == 1

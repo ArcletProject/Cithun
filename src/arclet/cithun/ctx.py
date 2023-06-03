@@ -1,8 +1,13 @@
 from collections import UserDict
 from typing import Literal
+from contextvars import ContextVar
+from contextlib import contextmanager
 
 
 class Context(UserDict):
+    @staticmethod
+    def current() -> "Context":
+        return _ctx.get(Context())
 
     def __hash__(self):
         _res = []
@@ -29,16 +34,28 @@ class Context(UserDict):
         return cls(**_data)
 
     def satisfied(
-        self, other: "Context", mode: Literal['least_one', 'all'] = 'least_one'
+        self, other: "Context", mode: Literal["least_one", "all"] = "least_one"
     ) -> bool:
         if not self.data:
             return True
         if not other.data:
             return True
-        return self.contain_all(other) if mode == 'all' else self.contain_least(other)
+        return self.contain_all(other) if mode == "all" else self.contain_least(other)
 
     def contain_all(self, other: "Context"):
         return self.data == other.data
 
     def contain_least(self, other: "Context"):
         return any((other.get(k) == v for k, v in self.data.items()))
+
+
+_ctx = ContextVar("context")
+
+
+@contextmanager
+def context(**kwargs):
+    token = _ctx.set(Context(**kwargs))
+    try:
+        yield
+    finally:
+        _ctx.reset(token)

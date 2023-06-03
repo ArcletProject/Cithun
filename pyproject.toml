@@ -7,7 +7,9 @@ description = "Permission system"
 authors = [
     {name = "RF-Tar-Railt", email = "rf_tar_railt@qq.com"},
 ]
-dependencies = []
+dependencies = [
+    "typing-extensions>=4.6.3",
+]
 requires-python = ">=3.9"
 readme = "README.md"
 license = {text = "MIT"}
