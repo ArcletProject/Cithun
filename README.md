@@ -7,17 +7,17 @@ WIP
 ## Example
 
 ```python
-from arclet.cithun import User, Group, NodeState
+from arclet.cithun import User, NodeState, Group, monitor
 
-admin = Group('admin')
-admin.set("/foo/bar/baz/", NodeState(7))
+admin = Group('admin', 100)
+monitor.set(admin, "/foo/bar/baz/", NodeState(7))
 
 user = User('cithun')
-user.join(admin)
+user.groups.append(admin)
 
-user.get("/foo/bar/baz/") # vma
-user.suset("/foo/bar/baz/qux")
-user.available("/foo/bar/baz/qux") # False as default perm of qux is vm-
-user.suset("/foo/bar/baz/", NodeState("v-a"))
-user.set("/foo/bar/baz/qux", NodeState(7))  # False as failed
+monitor.get(user, "/foo/bar/baz/") # vma
+monitor.suadd(user, "/foo/bar/baz/qux")
+monitor.available(user, "/foo/bar/baz/qux") # False as default perm of qux is vm-
+monitor.suset(user, "/foo/bar/baz/", NodeState("v-a"))
+monitor.set(user, "/foo/bar/baz/qux", NodeState(7))  # False as /baz/ is not modifiable
 ```
