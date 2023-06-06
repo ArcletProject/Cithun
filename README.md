@@ -21,7 +21,7 @@ with context(scope="main"):
     monitor.add(admin, "/foo/bar/baz/", NodeState(7))
     
     user = User('cithun')
-    user.groups.append(admin)
+    user.join(admin)
     
     monitor.get(user, "/foo/bar/baz/")  # vma
     monitor.sadd(user, "/foo/bar/baz/qux")

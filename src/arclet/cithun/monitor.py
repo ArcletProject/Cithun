@@ -232,3 +232,26 @@ def available(
     if res is None:
         return
     return res.state & 1 == 1
+
+
+def require(
+    owner: Owner, node: Node | str, context: Context | None = None, missing_ok: bool = True
+):
+    """查看具体节点的状态，若该节点的父节点不可用，则不会返回该节点的状态
+
+    目标节点不存在且 `missing_ok` 为 True 时，若 Owner 拥有目标节点的任意一父节点的权限，则返回 True
+    """
+    try:
+        state = get(owner, node, context)
+    except ValueError:
+        if not missing_ok:
+            return False
+        _node = node if isinstance(node, Node) else ROOT.from_path(node)
+        _ctx = context or Context.current()
+        _prev = _node
+        while _prev.parent:
+            if (res := sget(owner, _prev.parent, _ctx)) and res.state & 1 == 1:
+                return True
+            _prev = _prev.parent
+        return False
+    return False if state is None else state.state & 1 == 1
