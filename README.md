@@ -14,18 +14,18 @@ WIP
 ## Example
 
 ```python
-from arclet.cithun import User, NodeState, Group, monitor, context
+from arclet.cithun import User, NodeState, Group, context
 
 with context(scope="main"):
     admin = Group('admin', 100)
-    monitor.add(admin, "/foo/bar/baz/", NodeState(7))
+    admin.add("/foo/bar/baz/", NodeState("vma"))
     
     user = User('cithun')
     user.join(admin)
     
-    monitor.get(user, "/foo/bar/baz/")  # vma
-    monitor.sadd(user, "/foo/bar/baz/qux")
-    monitor.available(user, "/foo/bar/baz/qux")  # False as default perm of qux is vm-
-    monitor.smodify(admin, "/foo/bar/baz/", NodeState("v-a"))
-    monitor.modify(user, "/foo/bar/baz/qux", NodeState(7)) # False as /baz/ is not modifiable
+    user.get("/foo/bar/baz/")  # vma
+    user.sadd("/foo/bar/baz/qux")
+    user.available("/foo/bar/baz/qux")  # False as default perm of qux is vm-
+    admin.smodify("/foo/bar/baz/", NodeState("v-a"))
+    user.modify("/foo/bar/baz/qux", NodeState(7)) # False as /baz/ is not modifiable
 ```
