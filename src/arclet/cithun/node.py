@@ -2,36 +2,37 @@ from __future__ import annotations
 import inspect
 from typing import overload, TypeVar
 from weakref import WeakKeyDictionary
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 _D = TypeVar("_D")
+_MAPPING = {"-": 0, "a": 1, "m": 2, "v": 4}
 
 
 class NodeState:
     AVAILABLE = 1
     """
-    若该节点拥有子节点，则表示该节点的子节点可用
+    若 state 所属的权限节点拥有子节点，则表示对应的权限拥有者默认情况下对该节点的子节点拥有使用权限
     
-    若该节点不拥有子节点，则表示该节点可用，以及节点相关实际内容可用
+    若 state 所属的权限节点不拥有子节点，则表示对应的权限拥有者对该节点拥有使用权限，表示对节点对应的实际内容可用
     """
 
     MODIFY = 2
     """
-    若该节点拥有子节点，则表示该节点拥有者可以为该节点创建，删除，移动子节点
+    若 state 所属的权限节点拥有子节点，则表示对应的权限拥有者可以增加、删除、修改该节点的子节点（无论子节点的权限是怎样的）
     
-    若该节点不拥有子节点，则表示该节点拥有者可以修改节点信息
+    若 state 所属的权限节点不拥有子节点，则表示对应的权限拥有者可以修改该节点的内容
     """
 
     VISIT = 4
     """
-    若该节点拥有子节点，则表示该节点拥有者可以访问该节点的子节点
+    若 state 所属的权限节点拥有子节点，则表示对应的权限拥有者可以访问该节点的子节点
     
-    若该节点不拥有子节点，则表示该节点拥有者可以访问节点信息
+    若 state 所属的权限节点不拥有子节点，则表示对应的权限拥有者可以查看节点的状态和内容
     """
 
     def __init__(self, state: int | str):
         if isinstance(state, str):
-            state = sum({"-": 0, "a": 1, "m": 2, "v": 4}[i] for i in state.lower() if i in {"-", "a", "m", "v"})
+            state = sum(_MAPPING[i] for i in state.lower() if i in _MAPPING)
         if state < 0 or state > 7:
             raise ValueError("state must be in range [0, 7]")
         self.state = state
@@ -67,6 +68,7 @@ class Node:
     name: str
     parent: Node | None
     isdir: bool
+    content: dict[str, str] = field(default_factory=dict, compare=False, hash=False)
 
     @staticmethod
     def from_path(path: str, root: Node | None = None) -> Node:
@@ -100,7 +102,7 @@ class Node:
         parent: Node | None = None,
         isdir: bool = False,
     ):
-        _in_current_module = inspect.currentframe().f_back.f_globals["__name__"] == __name__
+        _in_current_module = inspect.currentframe().f_back.f_globals["__name__"] == __name__  # type: ignore
         if not _in_current_module and not name:
             raise ValueError("name is required")
         self.name = name
@@ -184,6 +186,12 @@ class Node:
     @property
     def isfile(self):
         return not self.isdir
+
+    def __truediv__(self, other: str):
+        if self.isfile:
+            self.isdir = True
+            NODE_CHILD_MAP[self] = {}
+        return Node.from_path(other, self)
 
 
 ROOT = Node("", None, True)

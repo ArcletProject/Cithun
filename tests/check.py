@@ -9,15 +9,7 @@ P = ParamSpec('P')
 user = User('cithun')
 
 
-def perm_add(usr: User, path: str, active: bool = True):
-    return usr.sadd(path, NodeState(7) if active else None)
-
-
-def perm_set(usr: User, path: str, state: NodeState):
-    return usr.smodify(path, state)
-
-
-def require(path: str, missing_ok: bool = True) -> Callable[[Callable[P, T]], Callable[Concatenate[User, P], T]]:
+def require(path: str, missing_ok: bool = False) -> Callable[[Callable[P, T]], Callable[Concatenate[User, P], T]]:
     def decorator(func: Callable[P, T]) -> Callable[Concatenate[User, P], T]:
         @wraps(func)
         def wrapper(usr: User, *args: P.args, **kwargs: P.kwargs) -> T:
@@ -30,33 +22,34 @@ def require(path: str, missing_ok: bool = True) -> Callable[[Callable[P, T]], Ca
     return decorator
 
 
-@require("/foo/bar/baz/qux")
-def foo():
-    print("foo")
+@require("/foo/bar/baz")
+def alice():
+    print("alice")
 
 
-@require("/foo/bar/baz/qux/quux")
-def bar():
-    print("bar")
+@require("/foo/bar/baz/qux", missing_ok=True)
+def bob():
+    print("bob")
 
 
-@require("/foo/bar/baz/qux/quux", missing_ok=False)
-def baz():
-    print("baz")
+@require("/foo/bar/baz/qux", missing_ok=False)
+def caven():
+    print("caven")
 
 
-perm_add(user, "/foo/bar/baz/qux")
-foo(user)  # foo
-bar(user)  # bar as target node's parent is available
-
-try:
-    baz(user)
-except PermissionError as e:
-    print(e)  # raise PermissionError as baz specified missing_ok=False, and qux/quux is not available
-
-perm_set(user, "/foo/bar/baz/", NodeState("v--"))
+user.sadd("/foo/bar/baz", NodeState("vma"))
+alice(user)  # alice
+bob(user)  # bob as target node's parent is available
 
 try:
-    foo(user)
+    caven(user)
 except PermissionError as e:
-    print(e)  # raise PermissionError as foo's target node is not available
+    # raise PermissionError as caven specified missing_ok=False, and baz/qux is not exist
+    print(e)
+
+user.smodify("/foo/bar/", NodeState("v--"))
+
+try:
+    alice(user)
+except PermissionError as e:
+    print(e)  # raise PermissionError as alice's target node is not available
