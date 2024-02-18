@@ -1,7 +1,5 @@
 from __future__ import annotations
 import inspect
-from typing import overload, Literal
-from weakref import WeakKeyDictionary
 from dataclasses import dataclass, field
 
 _MAPPING = {"-": 0, "a": 1, "m": 2, "v": 4}
@@ -59,149 +57,173 @@ class NodeState:
         return "".join(state)
 
 
-NODE_CHILD_MAP: WeakKeyDictionary['Node', dict[str, 'Node']] = WeakKeyDictionary()
+# NODE_CHILD_MAP: WeakKeyDictionary['Node', dict[str, 'Node']] = WeakKeyDictionary()
+INDEX_MAP: dict[str, Node] = {}
 
 
 @dataclass(init=False, repr=False, eq=True, unsafe_hash=True)
 class Node:
     name: str
-    parent: Node | None
-    isdir: bool
-    content: dict[str, str] = field(default_factory=dict, compare=False, hash=False)
-
-    @staticmethod
-    def from_path(path: str, root: Node | None = None) -> Node:
-        _root = root or ROOT
-        if _root.isfile:
-            raise ValueError("root is a file")
-        parts = path.split("/")
-        if not parts[0]:
-            parts.pop(0)
-            _root = ROOT
-        elif (count := parts[0].count(".")) == len(parts[0]):
-            if count != 2:
-                parts.pop(0)
-            elif not _root.parent:
-                raise ValueError("root has no parent")
-            else:
-                _root = _root.parent
-        end = parts.pop(-1)
-        node = _root
-        for part in parts:
-            node = Node(part, node, True)
-        if not end:
-            node.isdir = True
-            NODE_CHILD_MAP[node] = {}
-            return node
-        return Node(end, node)
+    content: dict[str, str] = field(compare=False, hash=False)
 
     def __init__(
         self,
         name: str,
-        parent: Node | None = None,
-        isdir: bool = False,
+        content: dict[str, str] | None = None,
     ):
         _in_current_module = inspect.currentframe().f_back.f_globals["__name__"] == __name__  # type: ignore
         if not _in_current_module and not name:
             raise ValueError("name is required")
         self.name = name
-        self.parent = parent if _in_current_module else (parent or ROOT)
-        self.isdir = isdir
-        if isdir:
-            NODE_CHILD_MAP[self] = {}
-        if self.parent is not None:
-            if self.parent.isfile:
-                raise ValueError(f"parent {self.parent} is a file")
-            NODE_CHILD_MAP.setdefault(self.parent, {})[self.name] = self
-
-    def move(self, new_parent: Node):
-        if new_parent.isfile:
-            raise ValueError(f"new parent {new_parent} is a file")
-        if self.parent is not None:
-            NODE_CHILD_MAP[self.parent].pop(self.name)
-        self.parent = new_parent
-        NODE_CHILD_MAP[self.parent][self.name] = self
-
-    def _get_once(self, name: str):
-        if self not in NODE_CHILD_MAP:
-            return None
-        if name in NODE_CHILD_MAP[self]:
-            return NODE_CHILD_MAP[self][name]
-        if name in {"$self", ".", ""}:
-            return self
-        return self.parent if name in {"$parent", ".."} else None
-
-    @overload
-    def get(self, path: str) -> Node:
-        ...
-
-    @overload
-    def get(self, path: str, missing_ok: Literal[True]) -> Node | None:
-        ...
-
-    @overload
-    def get(self, path: str, missing_ok: Literal[False]) -> Node:
-        ...
-
-    def get(self, path: str, missing_ok: bool = False) -> Node | None:
-        if not path:
-            return self
-        if "/" not in path:
-            if (res := self._get_once(path)) is None and not missing_ok:
-                raise KeyError(path)
-            return res
-        parts = path.split("/")
-        if not parts[0]:
-            return ROOT.get("/".join(parts[1:]), missing_ok)  # type: ignore
-        if (count := parts[0].count(".")) == len(parts[0]) and count > 2:
-            parts[0] = "."
-        node = self
-        for part in parts:
-            node = node._get_once(part)
-            if node is None:
-                if not missing_ok:
-                    raise KeyError("/".join(parts[: parts.index(part) + 1]))
-                return None
-        return node
-
-    def __getitem__(self, name: str):
-        if res := self.get(name):
-            return res
-        raise KeyError(name)
-
-    def __contains__(self, name: str):
-        return name in NODE_CHILD_MAP[self]
-
-    def __iter__(self):
-        return iter(NODE_CHILD_MAP[self].values())
-
-    def set(self, node: Node):
-        node.move(self)
+        self.content = content or {}
+        # self.name = name
+        # self.parent = parent if _in_current_module else (parent or ROOT)
+        # self.isdir = isdir
+        # if isdir:
+        #     NODE_CHILD_MAP[self] = {}
+        # if self.parent is not None:
+        #     if self.parent.isfile:
+        #         raise ValueError(f"parent {self.parent} is a file")
+        #     NODE_CHILD_MAP.setdefault(self.parent, {})[self.name] = self
 
     @property
-    def path(self):
-        if self.parent is None:
-            return "/"
-        path = f"'{self.name}'" if " " in self.name else self.name
-        node = self
-        while node.parent:
-            node = node.parent
-            path = f"{node.name}/{path}"
-        return f"{path}/" if self.isdir else path
-
-    def __repr__(self):
-        return f"Node({self.path})"
+    def isdir(self):
+        return self.content.get("$type") == "dir"
 
     @property
     def isfile(self):
-        return not self.isdir
+        return self.content.get("$type") == "file"
 
-    def __truediv__(self, other: str):
-        if self.isfile:
-            self.isdir = True
-            NODE_CHILD_MAP[self] = {}
-        return Node.from_path(other, self)
+    @property
+    def path(self):
+        return self.content.get("$path", self.name)
+
+    @property
+    def parent(self):
+        return self.content.get("$parent")
+
+    def exist(self):
+        return self.path in INDEX_MAP
+
+    def mkdir(
+        self,
+        path: str,
+        content: dict[str, str] | None = None,
+        *,
+        exist_ok: bool = False,
+        parents: bool = False,
+    ):
+        return mkdir(path, self, content, exist_ok=exist_ok, parents=parents)
+
+    def touch(
+        self,
+        path: str,
+        content: dict[str, str] | None = None,
+        *,
+        exist_ok: bool = False,
+        parents: bool = False,
+    ):
+        return touch(path, self, content, exist_ok=exist_ok, parents=parents)
+
+    def __str__(self):
+        return self.name
+
+    def __repr__(self):
+        return f"{'DIR' if self.isdir else 'FILE'}({self.name!r})"
 
 
-ROOT = Node("", None, True)
-NODE_CHILD_MAP[ROOT] = {}
+ROOT = Node("/", {"$type": "dir", "$path": ""})
+
+
+def split_path(path: str, base: Node) -> tuple[Node, list[str]]:
+    if not path:
+        raise ValueError("path is required")
+    if path == "/":
+        return ROOT, []
+    parts = path.split("/")
+    first = parts[0]
+    if not first:  # absolute path
+        parts.pop(0)
+        return ROOT, parts
+    if first == ".":  # current node
+        return base, parts[1:]
+    _base = base
+    while first == "..":  # parent node
+        parts.pop(0)
+        first = parts[0]
+        if not _base.parent:
+            raise ValueError("base has no parent")
+        _base = _base.parent
+    return _base, parts
+
+
+def mkdir(
+    path: str,
+    base: Node = ROOT,
+    content: dict[str, str] | None = None,
+    *,
+    exist_ok: bool = False,
+    parents: bool = False,
+):
+    if base.isfile:
+        raise ValueError("base is a file")
+    _base, parts = split_path(path, base)
+    if not parts:
+        raise ValueError("path is required")
+    if len(parts) == 1:
+        _path = f"{_base.path}/{parts[0]}"
+        if not exist_ok and _path in INDEX_MAP:
+            raise FileExistsError(_path)
+        node = Node(parts[0], {"$type": "dir", "$path": _path, "$parent": _base, **(content or {})})
+        INDEX_MAP[_path] = node
+        return node
+    if not parents:
+        raise FileNotFoundError(parts[0])
+    for part in parts[:-1]:
+        _path = f"{_base.path}/{part}"
+        if not exist_ok and _path in INDEX_MAP:
+            raise FileExistsError(_path)
+        _base = Node(part, {"$type": "dir", "$path": _path, "$parent": _base})
+        INDEX_MAP[_path] = _base
+    _path = f"{_base.path}/{parts[-1]}"
+    if not exist_ok and _path in INDEX_MAP:
+        raise FileExistsError(_path)
+    node = Node(parts[-1], {"$type": "dir", "$path": _path, "$parent": _base, **(content or {})})
+    INDEX_MAP[_path] = node
+    return node
+
+
+def touch(
+    path: str,
+    base: Node = ROOT,
+    content: dict[str, str] | None = None,
+    *,
+    exist_ok: bool = False,
+    parents: bool = False,
+):
+    if base.isfile:
+        raise ValueError("base is a file")
+    _base, parts = split_path(path, base)
+    if not parts:
+        raise ValueError("path is required")
+    if len(parts) == 1:
+        _path = f"{_base.path}/{parts[0]}"
+        if not exist_ok and _path in INDEX_MAP:
+            raise FileExistsError(_path)
+        node = Node(parts[0], {"$type": "file", "$path": _path, "$parent": _base, **(content or {})})
+        INDEX_MAP[_path] = node
+        return node
+    if not parents:
+        raise FileNotFoundError(parts[0])
+    for part in parts[:-1]:
+        _path = f"{_base.path}/{part}"
+        if not exist_ok and _path in INDEX_MAP:
+            raise FileExistsError(_path)
+        _base = Node(part, {"$type": "dir", "$path": _path, "$parent": _base})
+        INDEX_MAP[_path] = _base
+    _path = f"{_base.path}/{parts[-1]}"
+    if not exist_ok and _path in INDEX_MAP:
+        raise FileExistsError(_path)
+    node = Node(parts[-1], {"$type": "file", "$path": _path, "$parent": _base, **(content or {})})
+    INDEX_MAP[_path] = node
+    return node
