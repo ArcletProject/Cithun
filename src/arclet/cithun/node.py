@@ -1,10 +1,9 @@
 from __future__ import annotations
 import inspect
-from typing import overload, TypeVar
+from typing import overload, Literal
 from weakref import WeakKeyDictionary
 from dataclasses import dataclass, field
 
-_D = TypeVar("_D")
 _MAPPING = {"-": 0, "a": 1, "m": 2, "v": 4}
 
 
@@ -124,35 +123,45 @@ class Node:
         NODE_CHILD_MAP[self.parent][self.name] = self
 
     def _get_once(self, name: str):
+        if self not in NODE_CHILD_MAP:
+            return None
         if name in NODE_CHILD_MAP[self]:
             return NODE_CHILD_MAP[self][name]
-        if name in {"self", ".", ""}:
+        if name in {"$self", ".", ""}:
             return self
-        return self.parent if name in {"parent", ".."} else None
+        return self.parent if name in {"$parent", ".."} else None
 
     @overload
-    def get(self, path: str) -> Node | None:
+    def get(self, path: str) -> Node:
         ...
 
     @overload
-    def get(self, path: str, default: _D) -> Node | _D:
+    def get(self, path: str, missing_ok: Literal[True]) -> Node | None:
         ...
 
-    def get(self, path: str, default: _D = None) -> Node | _D:
+    @overload
+    def get(self, path: str, missing_ok: Literal[False]) -> Node:
+        ...
+
+    def get(self, path: str, missing_ok: bool = False) -> Node | None:
         if not path:
             return self
         if "/" not in path:
-            return self._get_once(path) or default
+            if (res := self._get_once(path)) is None and not missing_ok:
+                raise KeyError(path)
+            return res
         parts = path.split("/")
         if not parts[0]:
-            return ROOT.get("/".join(parts[1:]), default)
+            return ROOT.get("/".join(parts[1:]), missing_ok)  # type: ignore
         if (count := parts[0].count(".")) == len(parts[0]) and count > 2:
             parts[0] = "."
         node = self
         for part in parts:
             node = node._get_once(part)
             if node is None:
-                return default
+                if not missing_ok:
+                    raise KeyError("/".join(parts[: parts.index(part) + 1]))
+                return None
         return node
 
     def __getitem__(self, name: str):

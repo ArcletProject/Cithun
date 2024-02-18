@@ -1,4 +1,4 @@
-from arclet.cithun.node import Node, ROOT, NODE_CHILD_MAP
+from arclet.cithun.node import Node, ROOT, NODE_CHILD_MAP, Selector
 from pprint import pprint
 
 FOOD = Node("food", isdir=True)
@@ -51,5 +51,5 @@ except ValueError as e:
     print(e)
 
 print(FOOD.get("./vegetable"))
-assert Node.from_path("./vegetable/", FOOD) == VEGETABLE
-assert Node.from_path("./vegetable", FOOD) != VEGETABLE
+print(ROOT.get("/food/vegetable/tomato/small tomato"))
+print(ROOT.get("/food/vegetable/tomato/small tomato/"))

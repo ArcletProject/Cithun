@@ -5,3 +5,4 @@ from .node import Node as Node
 from .node import NodeState as NodeState
 from .owner import User as User
 from .owner import Group as Group
+from . import monitor as monitor
