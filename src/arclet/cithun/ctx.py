@@ -1,7 +1,7 @@
 from collections import UserDict
-from typing import Literal
-from contextvars import ContextVar
 from contextlib import contextmanager
+from contextvars import ContextVar
+from typing import Literal
 
 
 class Context(UserDict):
@@ -18,11 +18,7 @@ class Context(UserDict):
         return hash(tuple(_res) + (_size,))
 
     def __repr__(self):
-        return (
-            f"[{'|'.join(f'{k}={v}' for k, v in self.data.items())}]"
-            if self.data
-            else "[none]"
-        )
+        return f"[{'|'.join(f'{k}={v}' for k, v in self.data.items())}]" if self.data else "[none]"
 
     @classmethod
     def from_string(cls, data: str):
@@ -33,9 +29,7 @@ class Context(UserDict):
                 _data[segs[0]] = segs[1]
         return cls(**_data)
 
-    def satisfied(
-        self, other: "Context", mode: Literal["least_one", "all"] = "least_one"
-    ) -> bool:
+    def satisfied(self, other: "Context", mode: Literal["least_one", "all"] = "least_one") -> bool:
         if not self.data:
             return True
         if not other.data:

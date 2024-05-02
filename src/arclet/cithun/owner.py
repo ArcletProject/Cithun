@@ -1,20 +1,23 @@
 from __future__ import annotations
 
-from typing import ClassVar
 from abc import ABCMeta, abstractmethod
-from weakref import WeakValueDictionary
 from dataclasses import dataclass, field
-from .node import Node, NodeState
+from typing import ClassVar
+from weakref import WeakValueDictionary
+
 from .ctx import Context
+from .node import Node, NodeState
 
 USER_TABLE = WeakValueDictionary()
 GROUP_TABLE = WeakValueDictionary()
 
 
 class Owner(metaclass=ABCMeta):
-    DEFAULT: ClassVar[NodeState] = NodeState(7)
+    DEFAULT_DIR: ClassVar[NodeState] = NodeState(7)
+    DEFAULT_FILE: ClassVar[NodeState] = NodeState(6)
 
     inherits: list[Owner]
+    nodes: dict[Node, dict[Context, NodeState]]
 
     def iter_inherits(self):
         for gp in self.inherits:
@@ -31,9 +34,7 @@ class Owner(metaclass=ABCMeta):
 class Group(Owner):
     name: str
     priority: int
-    nodes: dict[Node, dict[Context, NodeState]] = field(
-        default_factory=dict, compare=False, hash=False
-    )
+    nodes: dict[Node, dict[Context, NodeState]] = field(default_factory=dict, compare=False, hash=False)
     inherits: list[Group] = field(default_factory=list, compare=False, hash=False)
 
     def __post_init__(self):
@@ -67,9 +68,7 @@ class User(Owner):
     DEFAULT = NodeState(6)
 
     name: str
-    nodes: dict[Node, dict[Context, NodeState]] = field(
-        default_factory=dict, compare=False, hash=False
-    )
+    nodes: dict[Node, dict[Context, NodeState]] = field(default_factory=dict, compare=False, hash=False)
     inherits: list[Group] = field(default_factory=list, compare=False, hash=False)
 
     def __post_init__(self):

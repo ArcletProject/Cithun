@@ -1,12 +1,13 @@
-from arclet.cithun import User, NodeState
-from typing import Callable, TypeVar
 from functools import wraps
-from typing_extensions import ParamSpec, Concatenate
+from typing import Callable, TypeVar
+from typing_extensions import Concatenate, ParamSpec
 
-T = TypeVar('T')
-P = ParamSpec('P')
+from arclet.cithun import NodeState, User
 
-user = User('cithun')
+T = TypeVar("T")
+P = ParamSpec("P")
+
+user = User("cithun")
 
 
 def require(path: str, missing_ok: bool = False) -> Callable[[Callable[P, T]], Callable[Concatenate[User, P], T]]:
@@ -17,6 +18,7 @@ def require(path: str, missing_ok: bool = False) -> Callable[[Callable[P, T]], C
                 return func(*args, **kwargs)
             else:
                 raise PermissionError(f"Permission denied for {usr.name} to access {path}")
+
         return wrapper
 
     return decorator

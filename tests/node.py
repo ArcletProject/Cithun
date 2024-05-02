@@ -1,12 +1,13 @@
-from arclet.cithun.node import Node, ROOT, mkdir, INDEX_MAP
 from pprint import pprint
 
+from arclet.cithun.node import INDEX_MAP, mkdir
+
 FOOD = mkdir("food")
-FRUIT = FOOD.mkdir("fruit")
-VEGETABLE = FOOD.mkdir("vegetable")
-APPLE = FRUIT.touch("apple")
-BANANA = FRUIT.touch("banana")
-SMALL_TOMATO = VEGETABLE.touch("tomato/small tomato", parents=True)
+FRUIT = (FOOD / "fruit").mkdir()
+VEGETABLE = (FOOD / "vegetable").mkdir()
+APPLE = (FRUIT / "apple").touch()
+BANANA = (FRUIT / "banana").touch()
+SMALL_TOMATO = (VEGETABLE / "tomato " / "small tomato").mkdir(parents=True)
 
 """
 # NodeTree
@@ -21,19 +22,3 @@ SMALL_TOMATO = VEGETABLE.touch("tomato/small tomato", parents=True)
 """
 
 pprint(INDEX_MAP)
-#
-# FRUIT.move(VEGETABLE)
-# print("=============================")
-# pprint(NODE_CHILD_MAP[FOOD])
-# pprint(NODE_CHILD_MAP[VEGETABLE])
-#
-# """
-# /
-# └── food
-#     └── vegetable
-#         ├── fruit
-#         │   ├── apple
-#         │   └── banana
-#         └── tomato
-#             └── small tomato
-# """

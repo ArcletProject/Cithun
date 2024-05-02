@@ -1,5 +1,5 @@
-from arclet.cithun.node import NodeState
 from arclet.cithun import User, context
+from arclet.cithun.node import NodeState
 
 with context(scope="main"):
     JACK = User("jack")
