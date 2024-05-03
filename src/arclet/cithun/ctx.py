@@ -1,7 +1,7 @@
 from collections import UserDict
 from contextlib import contextmanager
 from contextvars import ContextVar
-from typing import Literal
+from typing import Callable, Dict, Generic, TypeVar
 
 
 class Context(UserDict):
@@ -29,19 +29,6 @@ class Context(UserDict):
                 _data[segs[0]] = segs[1]
         return cls(**_data)
 
-    def satisfied(self, other: "Context", mode: Literal["least_one", "all"] = "least_one") -> bool:
-        if not self.data:
-            return True
-        if not other.data:
-            return True
-        return self.contain_all(other) if mode == "all" else self.contain_least(other)
-
-    def contain_all(self, other: "Context"):
-        return self.data == other.data
-
-    def contain_least(self, other: "Context"):
-        return any((other.get(k) == v for k, v in self.data.items()))
-
 
 _ctx = ContextVar("context")
 
@@ -53,3 +40,44 @@ def context(**kwargs):
         yield
     finally:
         _ctx.reset(token)
+
+
+class Satisfier:
+    @staticmethod
+    def all():
+        return Satisfier(lambda self, other: self.data == other.data)
+
+    @staticmethod
+    def least():
+        return Satisfier(lambda self, other: any((other.get(k) == v for k, v in self.data.items())))
+
+    def __init__(self, func: Callable[[Context, Context], bool]):
+        self.func = func
+
+    def __call__(self, target: "Context", other: "Context") -> bool:
+        if not target.data:
+            return True
+        if not other.data:
+            return True
+        return self.func(target, other)
+
+
+T = TypeVar("T")
+
+
+class Result(Generic[T]):
+    def __init__(self, data: Dict[Context, T], origin: Context):
+        self.data = data
+        self.origin = origin
+
+    @property
+    def most(self) -> T:
+        if self.origin in self.data:
+            return self.data[self.origin]
+        sortd = sorted(
+            self.data.keys(), key=lambda x: sum((x.get(k) == v for k, v in self.origin.items())), reverse=True
+        )
+        return self.data[sortd[0]]
+
+    def __repr__(self):
+        return f"Result({self.data})"

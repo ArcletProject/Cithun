@@ -5,10 +5,10 @@ import os
 import posixpath
 import re
 import sys
-from dataclasses import dataclass, field
-from types import MappingProxyType, GenericAlias
-from typing import Literal
 from collections.abc import Sequence
+from dataclasses import dataclass, field
+from types import GenericAlias, MappingProxyType
+from typing import List, Literal, Tuple, Union
 
 _MAPPING = {"-": 0, "a": 1, "m": 2, "v": 4}
 
@@ -64,6 +64,36 @@ class NodeState:
             state[0] = "v"
         return "".join(state)
 
+    def __gt__(self, other):
+        return self.state > other.state
+
+    def __ge__(self, other):
+        return self.state >= other.state
+
+    def __lt__(self, other):
+        return self.state < other.state
+
+    def __le__(self, other):
+        return self.state <= other.state
+
+    def __eq__(self, other):
+        return self.state == other.state
+
+    def __hash__(self):
+        return hash(self.state)
+
+    def __bool__(self):
+        return bool(self.state)
+
+    def __int__(self):
+        return self.state
+
+    def __and__(self, other):
+        return NodeState(self.state & other.state)
+
+    def __or__(self, other):
+        return NodeState(self.state | other.state)
+
 
 CHILD_MAP: dict[str, set[str]] = {"/": set()}
 
@@ -102,8 +132,8 @@ class _Flavour(object):
         self.altsep = ""
         self.join = self.sep.join
 
-    def parse_parts(self, parts):
-        parsed = []
+    def parse_parts(self, parts: List[str]):
+        parsed: List[str] = []
         sep = self.sep
         altsep = self.altsep
         root = ""
@@ -146,13 +176,13 @@ class _Flavour(object):
         else:
             return "", part
 
-    def casefold(self, s):
+    def casefold(self, s: str):
         return s
 
-    def casefold_parts(self, parts):
+    def casefold_parts(self, parts: List[str]):
         return parts
 
-    def compile_pattern(self, pattern):
+    def compile_pattern(self, pattern: str):
         return re.compile(fnmatch.translate(pattern)).fullmatch
 
     def resolve(self, node):
@@ -225,6 +255,12 @@ class Node:
         "_cached_cparts",
     )
 
+    _root: str
+    _parts: list[str]
+    _str: str
+    _hash: int
+    _pparts: tuple[str, ...]
+
     def __new__(cls, *args, **kwargs):
         self = cls._from_parts(args, init=False)
         self._init()
@@ -236,10 +272,10 @@ class Node:
         return self.__class__, tuple(self._parts)
 
     @classmethod
-    def _parse_args(cls, args):
+    def _parse_args(cls, args: Sequence[Union[Node, str]]):
         # This is useful when you don't want to create an instance, just
         # canonicalize some constructor arguments.
-        parts = []
+        parts: List[str] = []
         for a in args:
             if isinstance(a, Node):
                 parts += a._parts
@@ -255,7 +291,7 @@ class Node:
         return _flavour.parse_parts(parts)
 
     @classmethod
-    def _from_parts(cls, args, init=True):
+    def _from_parts(cls, args: Sequence[Union[Node, str]], init: bool = True):
         self = object.__new__(cls)
         root, parts = self._parse_args(args)
         self._root = root
@@ -265,7 +301,7 @@ class Node:
         return self
 
     @classmethod
-    def _from_parsed_parts(cls, root, parts, init=True):
+    def _from_parsed_parts(cls, root: str, parts: List[str], init: bool = True):
         self = object.__new__(cls)
         self._root = root
         self._parts = parts
@@ -274,13 +310,13 @@ class Node:
         return self
 
     @classmethod
-    def _format_parsed_parts(cls, root, parts):
+    def _format_parsed_parts(cls, root: str, parts: List[str]):
         if root:
             return root + _flavour.join(parts[1:])
         else:
             return _flavour.join(parts)
 
-    def _make_child(self, args):
+    def _make_child(self, args: Tuple[Union[Node, str], ...]):
         root, parts = self._parse_args(args)
         root, parts = _flavour.join_parsed_parts(self._root, self._parts, root, parts)
         return self._from_parsed_parts(root, parts)
@@ -397,32 +433,32 @@ class Node:
         else:
             return name
 
-    def with_name(self, name):
+    def with_name(self, name: str):
         """Return a new node with the file name changed."""
         if not self.name:
             raise ValueError("%r has an empty name" % (self,))
-        root, parts = _flavour.parse_parts((name,))
+        root, parts = _flavour.parse_parts([name])
         if not name or name[-1] in [_flavour.sep, _flavour.altsep] or root or len(parts) != 1:
-            raise ValueError("Invalid name %r" % (name))
+            raise ValueError(f"Invalid name {name!r}")
         return self._from_parsed_parts(self._root, self._parts[:-1] + [name])
 
-    def with_stem(self, stem):
+    def with_stem(self, stem: str):
         """Return a new node with the stem changed."""
         return self.with_name(stem + self.suffix)
 
-    def with_suffix(self, suffix):
+    def with_suffix(self, suffix: str):
         """Return a new node with the file suffix changed.  If the node
         has no suffix, add given suffix.  If the given suffix is an empty
         string, remove the suffix from the node.
         """
         f = _flavour
         if f.sep in suffix or f.altsep and f.altsep in suffix:
-            raise ValueError("Invalid suffix %r" % (suffix,))
+            raise ValueError(f"Invalid suffix {suffix!r}")
         if suffix and not suffix.startswith(".") or suffix == ".":
-            raise ValueError("Invalid suffix %r" % (suffix))
+            raise ValueError(f"Invalid suffix {suffix!r}")
         name = self.name
         if not name:
-            raise ValueError("%r has an empty name" % (self,))
+            raise ValueError(f"{self!r} has an empty name")
         old_suffix = self.suffix
         if not old_suffix:
             name += suffix
@@ -479,7 +515,7 @@ class Node:
             self._pparts = tuple(self._parts)
             return self._pparts
 
-    def joinpath(self, *args):
+    def joinpath(self, *args: Union[Node, str]) -> Node:
         """Combine this node with one or several arguments, and return a
         new node representing either a subnode (if all arguments are relative
         nodes) or a totally different node (if one of the arguments is
@@ -487,13 +523,13 @@ class Node:
         """
         return self._make_child(args)
 
-    def __truediv__(self, key):
+    def __truediv__(self, key: str):
         try:
             return self._make_child((key,))
         except TypeError:
             raise NotImplementedError
 
-    def __rtruediv__(self, key):
+    def __rtruediv__(self, key: str):
         try:
             return self._from_parts([key] + self._parts)
         except TypeError:
@@ -529,7 +565,7 @@ class Node:
         """
         cf = _flavour.casefold
         node_pattern = cf(node_pattern)
-        root, pat_parts = _flavour.parse_parts((node_pattern,))
+        root, pat_parts = _flavour.parse_parts([node_pattern])
         if not pat_parts:
             raise ValueError("empty pattern")
         if root and root != cf(self._root):
@@ -546,10 +582,9 @@ class Node:
                 return False
         return True
 
-    def _init(self):
-        ...
+    def _init(self): ...
 
-    def _make_child_relnode(self, part):
+    def _make_child_relnode(self, part: str):
         # This is an optimization used for dir walking.  `part` must be
         # a single part relative to this node.
         parts = self._parts + [part]
