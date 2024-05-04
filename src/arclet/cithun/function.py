@@ -146,13 +146,7 @@ class PermissionExecutor:
         if recursive:
             for node in _node.iterdir():
                 self.root.set(
-                    target,
-                    node,
-                    state,
-                    context,
-                    satisfier,
-                    missing_ok,
-                    recursive if node.is_dir() else False
+                    target, node, state, context, satisfier, missing_ok, recursive if node.is_dir() else False
                 )
 
     root: ClassVar["RootPermissionExecutor"]
