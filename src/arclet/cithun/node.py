@@ -279,15 +279,11 @@ class Node:
         for a in args:
             if isinstance(a, Node):
                 parts += a._parts
+            elif isinstance(a, str):
+                # Force-cast str subclasses to str (issue #21127)
+                parts.append(str(a))
             else:
-                a = os.fspath(a)
-                if isinstance(a, str):
-                    # Force-cast str subclasses to str (issue #21127)
-                    parts.append(str(a))
-                else:
-                    raise TypeError(
-                        "argument should be a str object or an os.PathLike " "object returning str, not %r" % type(a)
-                    )
+                raise TypeError(f"argument should be a str, not {type(a)!r}")
         return _flavour.parse_parts(parts)
 
     @classmethod
@@ -320,6 +316,14 @@ class Node:
         root, parts = self._parse_args(args)
         root, parts = _flavour.join_parsed_parts(self._root, self._parts, root, parts)
         return self._from_parsed_parts(root, parts)
+
+    def dot(self):
+        path = str(self)
+        if path == "/":
+            return ""
+        if path.startswith("/"):
+            path = path[1:]
+        return path.replace(" ", "-").replace(".", "_").replace("/", ".")
 
     def __str__(self):
         """Return the string representation of the node, suitable for
@@ -656,7 +660,7 @@ class Node:
         if not node.parent.exists():
             raise FileNotFoundError(f"No such file or directory: '{node.parent}'")
         INDEX_MAP[str(node)] = File("file", str(node), content or {})
-        CHILD_MAP[str(node.parent)].add(str(node))
+        CHILD_MAP[str(node.parent)].add(node.name)
         return self
 
     def mkdir(self, parents=False, exist_ok=False):
@@ -672,6 +676,7 @@ class Node:
                 raise FileNotFoundError(f"No such file or directory: '{self.parent}'")
             self.parent.mkdir(parents=True, exist_ok=True)
         INDEX_MAP[str(self)] = File("dir", str(self), {})
+        CHILD_MAP[str(self.parent)].add(self.name)
         return self
 
     def iterdir(self):

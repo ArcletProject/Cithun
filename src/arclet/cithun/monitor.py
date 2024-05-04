@@ -1,4 +1,5 @@
 from abc import ABC, abstractmethod
+from typing import Iterable
 
 from .owner import Group, User
 
@@ -32,6 +33,14 @@ class SyncMonitor(ABC):
     def user_leave(self, target: User, group: Group):
         pass
 
+    @abstractmethod
+    def all_users(self) -> Iterable[User]:
+        pass
+
+    @abstractmethod
+    def all_groups(self) -> Iterable[Group]:
+        pass
+
 
 class AsyncMonitor(ABC):
     @abstractmethod
@@ -60,4 +69,12 @@ class AsyncMonitor(ABC):
 
     @abstractmethod
     async def user_leave(self, target: User, group: Group):
+        pass
+
+    @abstractmethod
+    async def all_users(self) -> Iterable[User]:
+        pass
+
+    @abstractmethod
+    async def all_groups(self) -> Iterable[Group]:
         pass

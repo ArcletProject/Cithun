@@ -1,13 +1,14 @@
 from __future__ import annotations
 
-from typing import Literal, Tuple, overload, ClassVar
+from typing import ClassVar, Literal, Tuple, overload
 
+from .config import Config
 from .ctx import Context, Result, Satisfier
-from .node import Node, NodeState
-from .owner import DEFAULT_DIR, DEFAULT_FILE, Owner, export
+from .node import ROOT, Node, NodeState
+from .owner import Owner, export
 
 # 分为两类方法：针对权限节点的操作，与针对权限状态的操作
-# 权限状态: get, set, list
+# 权限状态: get, set
 #   sget: root 获取执行者权限状态
 #       1. 对于目标节点，若其父节点不存在，则依据参数 `missing_ok: bool` 决定是否抛出异常或返回 None
 #       2. 对于目标节点，若其自身不存在，则依据参数 `missing_ok: bool` 决定是否抛出异常或返回 None
@@ -24,12 +25,6 @@ from .owner import DEFAULT_DIR, DEFAULT_FILE, Owner, export
 #       2. 执行者: 对于目标节点，若其父节点的权限不包含 v+m+a，则抛出异常
 #       3. 对于目标节点，若其自身不存在，则依据参数 `missing_ok: bool` 决定是否抛出异常
 #       4. 执行者: 对于目标节点，若其自身的权限不包含 m，则不会修改该节点的状态
-#   slist: root 列出所有权限状态
-#       1. 对于目标节点，若其父节点不存在，则抛出异常
-#   list: 执行者列出所有人的权限状态
-#       1. 对于目标节点，若其父节点不存在，则抛出异常
-#       2. 执行者: 对于目标节点，若其父节点的权限不包含 v+a，则抛出异常
-#       3. 执行者: 对于目标节点，若其自身的权限不包含 v，则抛出异常，否则返回该节点的子节点的状态
 
 
 def _get(nodes: dict[Context, NodeState], context: Context, satisfier: Satisfier):
@@ -41,21 +36,24 @@ class PermissionExecutor:
         self.executor = executor
 
     def _check_self(self, node: Node, expected: Tuple[NodeState, NodeState], context: Context, satisfier: Satisfier):
-        node_parent = node.parent
+        _node = node.resolve()
         _executor_nodes = export(self.executor)
-        if node_parent in _executor_nodes:
-            states = _get(_executor_nodes[node_parent], context, satisfier)
-            state = max(states.values())
-            if state & expected[0] != expected[0]:
+        while _node.parent != ROOT:
+            node_parent = _node.parent
+            if node_parent in _executor_nodes:
+                states = _get(_executor_nodes[node_parent], context, satisfier)
+                state = max(states.values())
+                if state & expected[0] != expected[0]:
+                    return False
+            elif Config.DEFAULT_DIR & expected[0] != expected[0]:
                 return False
-        elif DEFAULT_DIR & expected[0] != expected[0]:
-            return False
+            _node = node_parent
         if node in _executor_nodes:
             states = _get(_executor_nodes[node], context, satisfier)
             state = max(states.values())
             if state & expected[1] != expected[1]:
                 return False
-        elif DEFAULT_DIR & expected[1] != expected[1]:
+        elif Config.DEFAULT_DIR & expected[1] != expected[1]:
             return False
         return True
 
@@ -82,28 +80,33 @@ class PermissionExecutor:
         satisfier: Satisfier | None = None,
         missing_ok: bool = False,
     ):
-        """获取节点状态"""
-        _node = node if isinstance(node, Node) else Node(node).absolute()
+        """获取节点状态
+
+        Args:
+            target (Owner): 目标对象
+            node (Node | str): 目标节点
+            context (Context, optional): 上下文. Defaults to None.
+            satisfier (Satisfier, optional): 上下文筛选器. Defaults to None.
+            missing_ok (bool, optional): 是否允许不存在. Defaults to False.
+        """
+        _node = node.resolve() if isinstance(node, Node) else Node(node).absolute()
         if not _node.exists():
             if missing_ok:
                 return
             raise FileNotFoundError(f"node {_node} not exists")
-        _node_parent = _node.parent
-        if not _node_parent.exists():
-            if missing_ok:
-                return
-            raise FileNotFoundError(f"node {_node_parent} not exists")
         _ctx = context or Context.current()
         _satisfier = satisfier or Satisfier.all()
         if not self._check_self(_node, (NodeState("v-a"), NodeState("v--")), _ctx, _satisfier):
             raise PermissionError(f"permission denied for {self.executor} to access {_node}")
         _nodes = export(target)
         if _node not in _nodes:
-            return Result({_ctx: DEFAULT_DIR if _node.is_dir() else DEFAULT_FILE}, _ctx)
+            return Result({_ctx: Config.DEFAULT_DIR if _node.is_dir() else Config.DEFAULT_FILE}, _ctx)
         if not _ctx.data:
             return Result(_nodes[_node], _ctx)
         return Result(
-            _get(_nodes[_node], _ctx, _satisfier) or {_ctx: DEFAULT_DIR if _node.is_dir() else DEFAULT_FILE}, _ctx
+            _get(_nodes[_node], _ctx, _satisfier)
+            or {_ctx: Config.DEFAULT_DIR if _node.is_dir() else Config.DEFAULT_FILE},
+            _ctx,
         )
 
     def set(
@@ -114,23 +117,43 @@ class PermissionExecutor:
         context: Context | None = None,
         satisfier: Satisfier | None = None,
         missing_ok: bool = False,
+        recursive: bool = False,
     ):
-        """设置节点状态"""
+        """设置节点状态
+
+        Args:
+            target (Owner): 目标对象
+            node (Node | str): 目标节点
+            state (NodeState): 目标状态
+            context (Context, optional): 上下文. Defaults to None.
+            satisfier (Satisfier, optional): 满足器. Defaults to None.
+            missing_ok (bool, optional): 是否允许不存在. Defaults to False.
+            recursive (bool, optional): 是否递归. Defaults to False.
+        """
         _node = node if isinstance(node, Node) else Node(node).absolute()
+        if _node.stem == "*":
+            _node = _node.parent
+            recursive = True
         if not _node.exists():
             if missing_ok:
                 return
             raise FileNotFoundError(f"node {_node} not exists")
-        _node_parent = _node.parent
-        if not _node_parent.exists():
-            if missing_ok:
-                return
-            raise FileNotFoundError(f"node {_node_parent} not exists")
         _ctx = context or Context.current()
         _satisfier = satisfier or Satisfier.all()
         if not self._check_self(_node, (NodeState("vma"), NodeState("-m-")), _ctx, _satisfier):
             raise PermissionError(f"permission denied for {self.executor} to modify {target}'s permission")
         target.nodes.setdefault(_node, {})[_ctx] = state
+        if recursive:
+            for node in _node.iterdir():
+                self.root.set(
+                    target,
+                    node,
+                    state,
+                    context,
+                    satisfier,
+                    missing_ok,
+                    recursive if node.is_dir() else False
+                )
 
     root: ClassVar["RootPermissionExecutor"]
 
@@ -159,7 +182,7 @@ PermissionExecutor.root = RootPermissionExecutor()
 #   modify: 修改权限节点内容
 #       1. 对于目标节点，若其父节点不存在，则依据参数 `missing_ok: bool` 决定是否抛出异常
 #       2. 对于目标节点，若其父节点前的父节点的权限不包含 v+a，则抛出异常
-#       3. 对于目标节点，若其父节点的权限不包含 v+a，则抛出异常
+#       3. 对于目标节点，若其父节点的权限不包含 v+m+a，则抛出异常
 #       4. 对于目标节点，若其自身不存在，则依据参数 `missing_ok: bool` 决定是否抛出异常
 #       5. 对于目标节点，若其自身的权限不包含 m，则抛出异常
 #   move: 移动权限节点

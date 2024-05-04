@@ -1,6 +1,7 @@
 import json
 from contextlib import contextmanager
 from pathlib import Path
+from typing import Iterable
 from weakref import WeakValueDictionary
 
 from arclet.cithun import Group, User
@@ -54,7 +55,7 @@ class DefaultMonitor(SyncMonitor):
             "groups": {group.name: group.dump() for group in self.GROUP_TABLE.values()},
         }
         with self.file.open("w", encoding="utf-8") as f:
-            json.dump(data, f, ensure_ascii=False)
+            json.dump(data, f, ensure_ascii=False, indent=2)
 
     def group_inherit(self, target: Group, *groups: Group):
         for group in groups:
@@ -74,3 +75,9 @@ class DefaultMonitor(SyncMonitor):
     def transaction(self):
         yield
         self.save()
+
+    def all_users(self) -> Iterable[User]:
+        return self.USER_TABLE.values()
+
+    def all_groups(self) -> Iterable[Group]:
+        return self.GROUP_TABLE.values()

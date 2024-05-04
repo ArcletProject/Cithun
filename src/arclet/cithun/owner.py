@@ -5,9 +5,6 @@ from typing import Protocol, Sequence, Union
 from .ctx import Context
 from .node import Node, NodeState
 
-DEFAULT_DIR = NodeState(7)
-DEFAULT_FILE = NodeState(6)
-
 
 class Group(Protocol):
     name: str

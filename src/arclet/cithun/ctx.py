@@ -1,7 +1,7 @@
 from collections import UserDict
 from contextlib import contextmanager
 from contextvars import ContextVar
-from typing import Callable, Dict, Generic, TypeVar
+from typing import Any, Callable, Dict, Generic, List, TypeVar
 
 
 class Context(UserDict):
@@ -43,6 +43,8 @@ def context(**kwargs):
 
 
 class Satisfier:
+    """上下文筛选器，用于判断当前上下文与目标上下文是否满足一定关系"""
+
     @staticmethod
     def all():
         return Satisfier(lambda self, other: self.data == other.data)
@@ -78,6 +80,9 @@ class Result(Generic[T]):
             self.data.keys(), key=lambda x: sum((x.get(k) == v for k, v in self.origin.items())), reverse=True
         )
         return self.data[sortd[0]]
+
+    def query(self, **kwargs: Callable[[Any], bool]) -> List[T]:
+        return [v for k, v in self.data.items() for _k, _v in kwargs.items() if _k in k and _v(k[_k])]
 
     def __repr__(self):
         return f"Result({self.data})"
