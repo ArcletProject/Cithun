@@ -24,7 +24,7 @@ class Context(UserDict):
     def from_string(cls, data: str):
         _data = {}
         if data != "[none]":
-            for seg in data[1:-2].split("|"):
+            for seg in data[1:-1].split("|"):
                 segs = seg.split("=")
                 _data[segs[0]] = segs[1]
         return cls(**_data)
