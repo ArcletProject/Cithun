@@ -143,7 +143,7 @@ class PermissionExecutor:
         if not self._check_self(_node, (NodeState("vma"), NodeState("-m-")), _ctx, _satisfier):
             raise PermissionError(f"permission denied for {self.executor} to modify {target}'s permission")
         target.nodes.setdefault(_node, {})[_ctx] = state
-        if recursive:
+        if recursive and _node.is_dir():
             for node in _node.iterdir():
                 self.root.set(
                     target, node, state, context, satisfier, missing_ok, recursive if node.is_dir() else False
