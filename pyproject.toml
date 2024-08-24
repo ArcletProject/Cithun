@@ -1,6 +1,6 @@
 [project]
 name = "arclet-cithun"
-version = "0.1.0"
+version = "0.1.1"
 description = "Permission system"
 authors = [
     {name = "RF-Tar-Railt", email = "rf_tar_railt@qq.com"},
@@ -17,6 +17,9 @@ requires = ["pdm-backend"]
 build-backend = "pdm.backend"
 
 [tool.pdm]
+
+[tool.pdm.build]
+includes = ["src/"]
 
 [tool.pdm.dev-dependencies]
 dev = [
