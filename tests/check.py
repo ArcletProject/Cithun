@@ -2,7 +2,7 @@ from functools import wraps
 from typing import Callable, TypeVar
 from typing_extensions import Concatenate, ParamSpec
 
-from arclet.cithun import NodeState, User
+from arclet.cithun import NodeState, Owner
 
 T = TypeVar("T")
 P = ParamSpec("P")
@@ -24,22 +24,22 @@ def require(path: str, missing_ok: bool = False) -> Callable[[Callable[P, T]], C
     return decorator
 
 
-@require("/foo/bar/baz")
+@require("foo.bar.baz")
 def alice():
     print("alice")
 
 
-@require("/foo/bar/baz/qux", missing_ok=True)
+@require("foo.bar.baz.qux", missing_ok=True)
 def bob():
     print("bob")
 
 
-@require("/foo/bar/baz/qux", missing_ok=False)
+@require("foo.bar.baz.qux", missing_ok=False)
 def caven():
     print("caven")
 
 
-user.sadd("/foo/bar/baz", NodeState("vma"))
+user.sadd("foo.bar.baz", NodeState("vma"))
 alice(user)  # alice
 bob(user)  # bob as target node's parent is available
 
@@ -49,7 +49,7 @@ except PermissionError as e:
     # raise PermissionError as caven specified missing_ok=False, and baz/qux is not exist
     print(e)
 
-user.smodify("/foo/bar/", NodeState("v--"))
+user.smodify("foo.bar", NodeState("v--"))
 
 try:
     alice(user)

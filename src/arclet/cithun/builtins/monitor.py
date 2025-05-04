@@ -1,83 +1,81 @@
 import json
 from contextlib import contextmanager
 from pathlib import Path
-from typing import Iterable
-from weakref import WeakValueDictionary
+from typing import Callable, Iterable, Optional
 
-from arclet.cithun import Group, User
-from arclet.cithun.monitor import SyncMonitor
+from arclet.cithun.function import PermissionExecutor as PE
+from arclet.cithun.monitor import SyncMonitor, TProvider
+from arclet.cithun.node import NODES, NodeState
+from arclet.cithun.owner import Owner
 
-from .owner import DefaultGroup, DefaultUser
+from .. import Context
+from .owner import DefaultOwner
 
 
 class DefaultMonitor(SyncMonitor):
-    def __init__(self, file: Path):
-        if not file.suffix.startswith(".json"):
-            raise ValueError(file)
-        self.file = file
-        self.USER_TABLE = WeakValueDictionary()
-        self.GROUP_TABLE = WeakValueDictionary()
-
-    def new_group(self, name: str, priority: int):
-        if name in self.GROUP_TABLE:
-            raise ValueError(f"Group {name} already exists")
-        group = DefaultGroup(name, priority)
-        self.GROUP_TABLE[name] = group
-        return group
-
-    def new_user(self, name: str):
-        if name in self.USER_TABLE:
-            raise ValueError(f"User {name} already exists")
-        user = DefaultUser(name)
-        self.USER_TABLE[name] = user
-        return user
-
     def load(self):
         if self.file.exists():
             with self.file.open("r", encoding="utf-8") as f:
                 data = json.load(f)
-            users = {name: DefaultUser.parse(raw) for name, raw in data["users"].items()}
-            groups = {name: DefaultGroup.parse(raw) for name, raw in data["groups"].items()}
-            self.USER_TABLE.update(users)
-            self.GROUP_TABLE.update(groups)
-            for group in groups.values():
-                group.inherits = [self.GROUP_TABLE[gp.name] for gp in group.inherits]
-            for user in users.values():
-                user.inherits = [self.GROUP_TABLE[gp.name] for gp in user.inherits]
-            del users, groups
+            for part, subs in data["nodes"].items():
+                NODES.setdefault(part, set()).update(subs)
+            owners = {name: DefaultOwner.parse(raw) for name, raw in data["owners"].items()}
+            self.OWNER_TABLE.update(owners)
+            for owner in owners.values():
+                owner.inherits = [self.OWNER_TABLE[gp.name] for gp in owner.inherits]
+            del owners
         else:
             with self.file.open("w+", encoding="utf-8") as f:
                 json.dump({}, f, ensure_ascii=False)
 
     def save(self):
         data = {
-            "users": {user.name: user.dump() for user in self.USER_TABLE.values()},
-            "groups": {group.name: group.dump() for group in self.GROUP_TABLE.values()},
+            "owners": {owner.name: owner.dump() for owner in self.OWNER_TABLE.values()},
+            "nodes": {part: list(subs) for part, subs in NODES.items()},
         }
         with self.file.open("w", encoding="utf-8") as f:
             json.dump(data, f, ensure_ascii=False, indent=2)
 
-    def group_inherit(self, target: Group, *groups: Group):
-        for group in groups:
-            if group not in target.inherits:
-                target.inherits.append(group)
+    def get_or_new_owner(self, name: str, priority: Optional[int] = None) -> Owner:
+        if name in self.OWNER_TABLE:
+            return self.OWNER_TABLE[name]
+        owner = DefaultOwner(name, priority)
+        self.OWNER_TABLE[name] = owner
+        return owner
 
-    def user_inherit(self, target: User, *groups: Group):
-        for group in groups:
-            if group not in target.inherits:
-                target.inherits.append(group)
+    def inherit(self, target: Owner, source: Owner, *sources: Owner):
+        for src in [source, *sources]:
+            if src not in target.inherits:
+                target.inherits.append(src)
 
-    def user_leave(self, target: User, group: Group):
-        if group in target.inherits:
-            target.inherits.remove(group)
+    def cancel_inherit(self, target: Owner, source: Owner):
+        if source in target.inherits:
+            target.inherits.remove(source)
+
+    def all_owners(self) -> Iterable[Owner]:
+        return self.OWNER_TABLE.values()
+
+    def provide(self, node: str, state: NodeState) -> Callable[[TProvider], TProvider]:
+        def wrapper(func: TProvider):
+            self.callbacks.append(func)
+            return func
+
+        return wrapper
+
+    def apply(self, owner: Owner, name: str, ctx: Optional[Context] = None):
+        _ctx = ctx or Context.current()
+        for cb in self.callbacks:
+            if cb(name, _ctx):
+                PE.root.set(owner, name, NodeState(7), _ctx)
+
+    def __init__(self, file: Path):
+        if not file.suffix.startswith(".json"):
+            raise ValueError(file)
+        self.file = file
+        self.callbacks = []
+        self.OWNER_TABLE = {}
 
     @contextmanager
     def transaction(self):
         yield
         self.save()
-
-    def all_users(self) -> Iterable[User]:
-        return self.USER_TABLE.values()
-
-    def all_groups(self) -> Iterable[Group]:
-        return self.GROUP_TABLE.values()

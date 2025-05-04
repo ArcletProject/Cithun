@@ -1,25 +1,16 @@
 from __future__ import annotations
 
-from typing import Protocol, Sequence, Union
+from typing import Optional, Protocol, Sequence
 
 from .ctx import Context
-from .node import Node, NodeState
+from .node import NodeState
 
 
-class Group(Protocol):
+class Owner(Protocol):
     name: str
-    priority: int
-    inherits: list[Group]
-    nodes: dict[Node, dict[Context, NodeState]]
-
-
-class User(Protocol):
-    name: str
-    inherits: list[Group]
-    nodes: dict[Node, dict[Context, NodeState]]
-
-
-Owner = Union[Group, User]
+    priority: Optional[int]
+    inherits: list[Owner]
+    nodes: dict[str, dict[Context, NodeState]]
 
 
 def iter_inherits(inherits: Sequence[Owner]):
@@ -29,16 +20,16 @@ def iter_inherits(inherits: Sequence[Owner]):
         yield owner
 
 
-def export(owner: Owner) -> dict[Node, dict[Context, NodeState]]:
+def export(owner: Owner) -> dict[str, dict[Context, NodeState]]:
     nodes = {}
-    gps = []
+    inherits: list[Owner] = []
     if owner.inherits:
-        gps.extend(iter_inherits(owner.inherits))
-    gps = list(set(gps))
-    gps.sort(key=lambda x: x.priority, reverse=True)
-    gps.append(owner)
-    for gp in gps:
-        for node, data in gp.nodes.items():
+        inherits.extend(iter_inherits(owner.inherits))
+    inherits = list(set(inherits))
+    inherits.sort(key=lambda x: x.priority or -1, reverse=True)
+    inherits.append(owner)
+    for ow in inherits:
+        for node, data in ow.nodes.items():
             if node not in nodes:
                 nodes[node] = data.copy()
             else:

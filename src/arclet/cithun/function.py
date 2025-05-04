@@ -4,7 +4,7 @@ from typing import ClassVar, Literal, Tuple, overload
 
 from .config import Config
 from .ctx import Context, Result, Satisfier
-from .node import ROOT, Node, NodeState
+from .node import NODES, NodeState, check_wildcard, iter_node
 from .owner import Owner, export
 
 # 分为两类方法：针对权限节点的操作，与针对权限状态的操作
@@ -35,19 +35,18 @@ class PermissionExecutor:
     def __init__(self, executor: Owner):
         self.executor = executor
 
-    def _check_self(self, node: Node, expected: Tuple[NodeState, NodeState], context: Context, satisfier: Satisfier):
-        _node = node.resolve()
+    def _check_self(self, node: str, expected: Tuple[NodeState, NodeState], context: Context, satisfier: Satisfier):
         _executor_nodes = export(self.executor)
-        while _node.parent != ROOT:
-            node_parent = _node.parent
-            if node_parent in _executor_nodes:
-                states = _get(_executor_nodes[node_parent], context, satisfier)
+        for parent in iter_node(node):
+            if parent == node:
+                continue
+            if parent in _executor_nodes:
+                states = _get(_executor_nodes[parent], context, satisfier)
                 state = max(states.values())
                 if state & expected[0] != expected[0]:
                     return False
             elif Config.DEFAULT_DIR & expected[0] != expected[0]:
                 return False
-            _node = node_parent
         if node in _executor_nodes:
             states = _get(_executor_nodes[node], context, satisfier)
             state = max(states.values())
@@ -59,14 +58,14 @@ class PermissionExecutor:
 
     @overload
     def get(
-        self, target: Owner, node: Node | str, context: Context | None = None, satisfier: Satisfier | None = None
+        self, target: Owner, node: str, context: Context | None = None, satisfier: Satisfier | None = None
     ) -> Result[NodeState]: ...
 
     @overload
     def get(
         self,
         target: Owner,
-        node: Node | str,
+        node: str,
         context: Context | None = None,
         satisfier: Satisfier | None = None,
         missing_ok: Literal[True] = True,
@@ -75,7 +74,7 @@ class PermissionExecutor:
     def get(
         self,
         target: Owner,
-        node: Node | str,
+        node: str,
         context: Context | None = None,
         satisfier: Satisfier | None = None,
         missing_ok: bool = False,
@@ -84,35 +83,33 @@ class PermissionExecutor:
 
         Args:
             target (Owner): 目标对象
-            node (Node | str): 目标节点
+            node (str): 目标节点
             context (Context, optional): 上下文. Defaults to None.
             satisfier (Satisfier, optional): 上下文筛选器. Defaults to None.
             missing_ok (bool, optional): 是否允许不存在. Defaults to False.
         """
-        _node = node.resolve() if isinstance(node, Node) else Node(node).absolute()
-        if not _node.exists():
+        if node not in NODES:
             if missing_ok:
                 return
-            raise FileNotFoundError(f"node {_node} not exists")
+            raise FileNotFoundError(f"node {node} not exists")
         _ctx = context or Context.current()
         _satisfier = satisfier or Satisfier.all()
-        if not self._check_self(_node, (NodeState("v-a"), NodeState("v--")), _ctx, _satisfier):
-            raise PermissionError(f"permission denied for {self.executor} to access {_node}")
+        if not self._check_self(node, (NodeState("v-a"), NodeState("v--")), _ctx, _satisfier):
+            raise PermissionError(f"permission denied for {self.executor} to access {node}")
         _nodes = export(target)
-        if _node not in _nodes:
-            return Result({_ctx: Config.DEFAULT_DIR if _node.is_dir() else Config.DEFAULT_FILE}, _ctx)
+        if node not in _nodes:
+            return Result({_ctx: Config.DEFAULT_DIR if NODES[node] else Config.DEFAULT_FILE}, _ctx)
         if not _ctx.data:
-            return Result(_nodes[_node], _ctx)
+            return Result(_nodes[node], _ctx)
         return Result(
-            _get(_nodes[_node], _ctx, _satisfier)
-            or {_ctx: Config.DEFAULT_DIR if _node.is_dir() else Config.DEFAULT_FILE},
+            _get(_nodes[node], _ctx, _satisfier) or {_ctx: Config.DEFAULT_DIR if NODES[node] else Config.DEFAULT_FILE},
             _ctx,
         )
 
     def set(
         self,
         target: Owner,
-        node: Node | str,
+        node: str,
         state: NodeState,
         context: Context | None = None,
         satisfier: Satisfier | None = None,
@@ -123,30 +120,28 @@ class PermissionExecutor:
 
         Args:
             target (Owner): 目标对象
-            node (Node | str): 目标节点
+            node (str): 目标节点
             state (NodeState): 目标状态
             context (Context, optional): 上下文. Defaults to None.
             satisfier (Satisfier, optional): 满足器. Defaults to None.
             missing_ok (bool, optional): 是否允许不存在. Defaults to False.
             recursive (bool, optional): 是否递归. Defaults to False.
         """
-        _node = node if isinstance(node, Node) else Node(node).absolute()
-        if _node.stem == "*":
-            _node = _node.parent
-            recursive = True
-        if not _node.exists():
+        is_wildcard, node = check_wildcard(node)
+        recursive = is_wildcard or recursive
+        if node not in NODES:
             if missing_ok:
                 return
-            raise FileNotFoundError(f"node {_node} not exists")
+            raise FileNotFoundError(f"node {node} not exists")
         _ctx = context or Context.current()
         _satisfier = satisfier or Satisfier.all()
-        if not self._check_self(_node, (NodeState("vma"), NodeState("-m-")), _ctx, _satisfier):
+        if not self._check_self(node, (NodeState("vma"), NodeState("-m-")), _ctx, _satisfier):
             raise PermissionError(f"permission denied for {self.executor} to modify {target}'s permission")
-        target.nodes.setdefault(_node, {})[_ctx] = state
-        if recursive and _node.is_dir():
-            for node in _node.iterdir():
+        target.nodes.setdefault(node, {})[_ctx] = state
+        if recursive and NODES[node]:
+            for sub_node in NODES[node]:
                 self.root.set(
-                    target, node, state, context, satisfier, missing_ok, recursive if node.is_dir() else False
+                    target, sub_node, state, context, satisfier, missing_ok, recursive if NODES[sub_node] else False
                 )
 
     root: ClassVar["RootPermissionExecutor"]
@@ -156,7 +151,7 @@ class RootPermissionExecutor(PermissionExecutor):
     def __init__(self):
         pass
 
-    def _check_self(self, node: Node, expected: Tuple[NodeState, NodeState], context: Context, satisfier: Satisfier):
+    def _check_self(self, node: str, expected: Tuple[NodeState, NodeState], context: Context, satisfier: Satisfier):
         return True
 
 
