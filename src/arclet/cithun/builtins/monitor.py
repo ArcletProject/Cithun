@@ -8,7 +8,6 @@ from arclet.cithun.monitor import SyncMonitor, TProvider
 from arclet.cithun.node import NODES, NodeState
 from arclet.cithun.owner import Owner
 
-from .. import Context
 from .owner import DefaultOwner
 
 
@@ -36,7 +35,7 @@ class DefaultMonitor(SyncMonitor):
         with self.file.open("w", encoding="utf-8") as f:
             json.dump(data, f, ensure_ascii=False, indent=2)
 
-    def get_or_new_owner(self, name: str, priority: Optional[int] = None) -> Owner:
+    def get_or_new_owner(self, name: str, priority: Optional[int] = None):
         if name in self.OWNER_TABLE:
             return self.OWNER_TABLE[name]
         owner = DefaultOwner(name, priority)
@@ -62,11 +61,10 @@ class DefaultMonitor(SyncMonitor):
 
         return wrapper
 
-    def apply(self, owner: Owner, name: str, ctx: Optional[Context] = None):
-        _ctx = ctx or Context.current()
+    def apply(self, owner: Owner, name: str, ctx: Optional[dict] = None):
         for cb in self.callbacks:
-            if cb(name, _ctx):
-                PE.root.set(owner, name, NodeState(7), _ctx)
+            if cb(name, ctx or {}):
+                PE.root.set(owner, name, NodeState(7))
 
     def __init__(self, file: Path):
         if not file.suffix.startswith(".json"):

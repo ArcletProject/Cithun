@@ -2,12 +2,11 @@ from abc import ABC, abstractmethod
 from collections.abc import Awaitable
 from typing import Callable, Iterable, Optional, TypeVar
 
-from .ctx import Context
 from .node import NodeState
 from .owner import Owner
 
-Provider = Callable[[Owner, Context], bool]
-AProvider = Callable[[Owner, Context], Awaitable[bool]]
+Provider = Callable[[Owner, dict], bool]
+AProvider = Callable[[Owner, dict], Awaitable[bool]]
 TProvider = TypeVar("TProvider", bound=Provider)
 TAProvider = TypeVar("TAProvider", bound=AProvider)
 
@@ -42,7 +41,7 @@ class SyncMonitor(ABC):
         pass
 
     @abstractmethod
-    def apply(self, owner: Owner, name: str, ctx: Optional[Context] = None):
+    def apply(self, owner: Owner, name: str, ctx: Optional[dict] = None):
         pass
 
 
@@ -76,5 +75,5 @@ class AsyncMonitor(ABC):
         pass
 
     @abstractmethod
-    async def apply(self, owner: Owner, name: str, ctx: Optional[Context] = None):
+    async def apply(self, owner: Owner, name: str, ctx: Optional[dict] = None):
         pass

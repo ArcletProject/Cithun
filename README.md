@@ -14,29 +14,28 @@ WIP
 ## Example
 
 ```python
-from arclet.cithun import SyncMonitor, NodeState, context, PE, ROOT, ensure_node
+from arclet.cithun import SyncMonitor, NodeState, PE, ROOT, ensure_node
 
 monitor = SyncMonitor()
 
 baz = ensure_node("foo.bar.baz")
 qux = ensure_node("foo.bar.baz.qux")
 
-with context(scope="main"):
-    admin = monitor.get_or_new_owner('admin', 100)
-    ROOT.set(admin, baz, NodeState("vma"))
-    
-    user = monitor.get_or_new_owner('cithun')
-    monitor.inherit(user, admin)
-    
-    assert ROOT.get(user, baz).most == NodeState("vma")
-    assert not ROOT.get(user, qux).most.available
-    
-    ROOT.set(user, qux, NodeState(7))
-    assert ROOT.get(user, qux).most.available
+admin = monitor.get_or_new_owner('admin', 100)
+ROOT.set(admin, baz, NodeState("vma"))
 
-    ROOT.set(admin, baz, NodeState("v-a"))
-    try:
-        PE(user).set(user, qux, NodeState("vm-"))
-    except PermissionError as e:
-        print(e)  # Permission denied as /baz/ is not modifiable
+user = monitor.get_or_new_owner('cithun')
+monitor.inherit(user, admin)
+
+assert ROOT.get(user, baz) == NodeState("vma")
+assert not ROOT.get(user, qux).available
+
+ROOT.set(user, qux, NodeState(7))
+assert ROOT.get(user, qux).available
+
+ROOT.set(admin, baz, NodeState("v-a"))
+try:
+    PE(user).set(user, qux, NodeState("vm-"))
+except PermissionError as e:
+    print(e)  # Permission denied as /baz/ is not modifiable
 ```
