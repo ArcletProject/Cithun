@@ -3,7 +3,7 @@ from pathlib import Path
 from arclet.cithun import PE, NodeState, ensure_node
 from arclet.cithun.builtins.monitor import DefaultMonitor
 
-monitor = DefaultMonitor(Path("monitor.json"))
+monitor = DefaultMonitor(Path("function_monitor.json"))
 
 ensure_node("foo.bar.baz.qux")
 ensure_node("command.test.sub")

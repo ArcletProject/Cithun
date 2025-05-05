@@ -1,26 +1,36 @@
 from functools import wraps
+from pathlib import Path
 from typing import Callable, TypeVar
 from typing_extensions import Concatenate, ParamSpec
 
-from arclet.cithun import NodeState, Owner
+from arclet.cithun import ROOT, NodeState, ensure_node
+from arclet.cithun.builtins.monitor import DefaultMonitor
+from arclet.cithun.builtins.owner import DefaultOwner
+
+monitor = DefaultMonitor(Path("check_monitor.json"))
 
 T = TypeVar("T")
 P = ParamSpec("P")
 
-user = User("cithun")
+user = monitor.get_or_new_owner("user:cithun")
 
 
-def require(path: str, missing_ok: bool = False) -> Callable[[Callable[P, T]], Callable[Concatenate[User, P], T]]:
-    def decorator(func: Callable[P, T]) -> Callable[Concatenate[User, P], T]:
+def require(
+    path: str, default_available: bool = False
+) -> Callable[[Callable[P, T]], Callable[Concatenate[DefaultOwner, P], T]]:
+    def decorator(func: Callable[P, T]) -> Callable[Concatenate[DefaultOwner, P], T]:
         @wraps(func)
-        def wrapper(usr: User, *args: P.args, **kwargs: P.kwargs) -> T:
-            if usr.require(path, missing_ok=missing_ok):
+        def wrapper(usr: DefaultOwner, *args: P.args, **kwargs: P.kwargs) -> T:
+            state = ROOT.get(usr, path)
+            if state.available:
                 return func(*args, **kwargs)
             else:
                 raise PermissionError(f"Permission denied for {usr.name} to access {path}")
 
         return wrapper
 
+    ensure_node(path)
+    ROOT.set(monitor.default_group, path, NodeState("vma") if default_available else NodeState("v--"))
     return decorator
 
 
@@ -29,27 +39,27 @@ def alice():
     print("alice")
 
 
-@require("foo.bar.baz.qux", missing_ok=True)
+@require("foo.bar.baz.qux")
 def bob():
     print("bob")
 
 
-@require("foo.bar.baz.qux", missing_ok=False)
+@require("foo.bar.qux")
 def caven():
     print("caven")
 
 
-user.sadd("foo.bar.baz", NodeState("vma"))
+ROOT.set(user, "foo.bar.baz.*", NodeState("vma"))
 alice(user)  # alice
 bob(user)  # bob as target node's parent is available
 
 try:
     caven(user)
 except PermissionError as e:
-    # raise PermissionError as caven specified missing_ok=False, and baz/qux is not exist
+    # raise PermissionError as caven's target node is not in the available path
     print(e)
 
-user.smodify("foo.bar", NodeState("v--"))
+ROOT.set(user, "foo.bar.*", NodeState("v--"))
 
 try:
     alice(user)

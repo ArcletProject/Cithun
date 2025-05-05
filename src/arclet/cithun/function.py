@@ -53,7 +53,7 @@ class PermissionExecutor:
     def get(self, target: Owner, node: str) -> NodeState: ...
 
     @overload
-    def get(self, target: Owner, node: str, missing_ok: Literal[True] = True) -> NodeState: ...
+    def get(self, target: Owner, node: str, missing_ok: Literal[True] = True) -> NodeState | None: ...
 
     def get(self, target: Owner, node: str, missing_ok: bool = False):
         """获取节点状态
@@ -102,9 +102,7 @@ class PermissionExecutor:
         target.nodes[node] = state
         if recursive and NODES[node]:
             for sub_node in NODES[node]:
-                self.root.set(
-                    target, sub_node, state, missing_ok, recursive if NODES[sub_node] else False
-                )
+                self.root.set(target, sub_node, state, missing_ok, recursive if NODES[sub_node] else False)
 
     root: ClassVar["RootPermissionExecutor"]
 

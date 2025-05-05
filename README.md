@@ -21,10 +21,10 @@ monitor = SyncMonitor()
 baz = ensure_node("foo.bar.baz")
 qux = ensure_node("foo.bar.baz.qux")
 
-admin = monitor.get_or_new_owner('admin', 100)
+admin = monitor.get_or_new_owner('group:admin', 100)
 ROOT.set(admin, baz, NodeState("vma"))
 
-user = monitor.get_or_new_owner('cithun')
+user = monitor.get_or_new_owner('user:cithun')
 monitor.inherit(user, admin)
 
 assert ROOT.get(user, baz) == NodeState("vma")
