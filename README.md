@@ -14,12 +14,12 @@ WIP
 ## Example
 
 ```python
-from arclet.cithun import SyncMonitor, NodeState, PE, ROOT, ensure_node
+from arclet.cithun import SyncMonitor, NodeState, PE, ROOT, define
 
 monitor = SyncMonitor()
 
-baz = ensure_node("foo.bar.baz")
-qux = ensure_node("foo.bar.baz.qux")
+baz = define("foo.bar.baz")
+qux = define("foo.bar.baz.qux")
 
 admin = monitor.get_or_new_owner('group:admin', 100)
 ROOT.set(admin, baz, NodeState("vma"))

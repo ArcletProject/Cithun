@@ -1,13 +1,13 @@
 from pathlib import Path
 
-from arclet.cithun import PE, NodeState, ensure_node
+from arclet.cithun import PE, NodeState, define
 from arclet.cithun.builtins.monitor import DefaultMonitor
 
 monitor = DefaultMonitor(Path("function_monitor.json"))
 
-ensure_node("foo.bar.baz.qux")
-ensure_node("command.test.sub")
-ensure_node("command.test1.sub1")
+define("foo.bar.baz.qux")
+define("command.test.sub")
+define("command.test1.sub1")
 
 with monitor.transaction():
     admin = monitor.get_or_new_owner("admin", 100)

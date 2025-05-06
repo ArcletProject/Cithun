@@ -4,7 +4,7 @@ from pathlib import Path
 from typing import Iterable, Optional
 
 from arclet.cithun.monitor import SyncMonitor
-from arclet.cithun.node import NODES
+from arclet.cithun.node import NODES, NODE_DEPENDS
 from arclet.cithun.owner import Owner
 
 from .owner import DefaultOwner
@@ -17,6 +17,8 @@ class DefaultMonitor(SyncMonitor):
                 data = json.load(f)
             for part, subs in data["nodes"].items():
                 NODES.setdefault(part, set()).update(subs)
+            for part, subs in data["depends"].items():
+                NODE_DEPENDS.setdefault(part, set()).update(subs)
             owners = {name: DefaultOwner.parse(raw) for name, raw in data["owners"].items()}
             _default_group = owners.pop("group:default", None)
             self.OWNER_TABLE.update(owners)
@@ -34,6 +36,7 @@ class DefaultMonitor(SyncMonitor):
         data = {
             "owners": {owner.name: owner.dump() for owner in self.OWNER_TABLE.values()},
             "nodes": {part: list(subs) for part, subs in NODES.items()},
+            "depends": {part: list(subs) for part, subs in NODE_DEPENDS.items()},
         }
         with self.file.open("w", encoding="utf-8") as f:
             json.dump(data, f, ensure_ascii=False, indent=2)

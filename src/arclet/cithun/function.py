@@ -3,7 +3,7 @@ from __future__ import annotations
 from typing import ClassVar, Literal, Tuple, overload
 
 from .config import Config
-from .node import NODES, NodeState, check_wildcard, iter_node
+from .node import NODES, NodeState, NODE_DEPENDS, check_wildcard, iter_node
 from .owner import Owner, export
 
 # 分为两类方法：针对权限节点的操作，与针对权限状态的操作
@@ -26,28 +26,34 @@ from .owner import Owner, export
 #       4. 执行者: 对于目标节点，若其自身的权限不包含 m，则不会修改该节点的状态
 
 
+def _check(path: str, nodes: dict[str, NodeState], expect: NodeState):
+    if path in nodes:
+        state = nodes[path]
+        if path in NODE_DEPENDS:
+            for sub_node in NODE_DEPENDS[path]:
+                if sub_node not in nodes:
+                    return False
+                state &= nodes[sub_node]
+        if state & expect != expect:
+            return False
+    elif Config.DEFAULT_DIR & expect != expect:
+        return False
+    return True
+
+
 class PermissionExecutor:
     def __init__(self, executor: Owner):
         self.executor = executor
 
     def _check_self(self, node: str, expected: Tuple[NodeState, NodeState]):
         _executor_nodes = export(self.executor)
+
         for parent in iter_node(node):
             if parent == node:
                 continue
-            if parent in _executor_nodes:
-                state = _executor_nodes[parent]
-                if state & expected[0] != expected[0]:
-                    return False
-            elif Config.DEFAULT_DIR & expected[0] != expected[0]:
+            if not _check(parent, _executor_nodes, expected[0]):
                 return False
-        if node in _executor_nodes:
-            state = _executor_nodes[node]
-            if state & expected[1] != expected[1]:
-                return False
-        elif Config.DEFAULT_DIR & expected[1] != expected[1]:
-            return False
-        return True
+        return _check(node, _executor_nodes, expected[1])
 
     @overload
     def get(self, target: Owner, node: str) -> NodeState: ...
@@ -72,7 +78,11 @@ class PermissionExecutor:
         _nodes = export(target)
         if node not in _nodes:
             return Config.DEFAULT_DIR if NODES[node] else Config.DEFAULT_FILE
-        return _nodes[node]
+        state = _nodes[node]
+        if node in NODE_DEPENDS:
+            for sub_node in NODE_DEPENDS[node]:
+                state &= _nodes.get(sub_node, Config.DEFAULT_DIR if NODES[sub_node] else Config.DEFAULT_FILE)
+        return state
 
     def set(
         self,

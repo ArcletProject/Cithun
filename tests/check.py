@@ -3,7 +3,7 @@ from pathlib import Path
 from typing import Callable, TypeVar
 from typing_extensions import Concatenate, ParamSpec
 
-from arclet.cithun import ROOT, NodeState, ensure_node
+from arclet.cithun import ROOT, NodeState, define, depend
 from arclet.cithun.builtins.monitor import DefaultMonitor
 from arclet.cithun.builtins.owner import DefaultOwner
 
@@ -29,39 +29,44 @@ def require(
 
         return wrapper
 
-    ensure_node(path)
+    define(path)
     ROOT.set(monitor.default_group, path, NodeState("vma") if default_available else NodeState("v--"))
     return decorator
 
 
 @require("foo.bar.baz")
 def alice():
-    print("alice")
+    return "alice"
 
 
 @require("foo.bar.baz.qux")
 def bob():
-    print("bob")
+    return "bob"
 
 
 @require("foo.bar.qux")
 def caven():
-    print("caven")
+    return "caven"
 
 
 ROOT.set(user, "foo.bar.baz.*", NodeState("vma"))
-alice(user)  # alice
-bob(user)  # bob as target node's parent is available
+assert alice(user) == "alice"
+assert bob(user) == "bob"  # target node's parent is available
 
 try:
     caven(user)
 except PermissionError as e:
     # raise PermissionError as caven's target node is not in the available path
-    print(e)
+    assert str(e) == "Permission denied for user:cithun to access foo.bar.qux"
 
-ROOT.set(user, "foo.bar.*", NodeState("v--"))
+ROOT.set(user, "foo.bar.qux", NodeState("vma"))
+assert caven(user) == "caven"  # caven as target node is available
+
+depend("foo.bar.qux", "foo.bar.baz.qux")
+ROOT.set(user, "foo.bar.baz.qux", NodeState("v--"))
 
 try:
-    alice(user)
+    caven(user)
 except PermissionError as e:
-    print(e)  # raise PermissionError as alice's target node is not available
+    # raise PermissionError as caven's target node is dependent on the unavailable node
+    assert str(e) == "Permission denied for user:cithun to access foo.bar.qux"

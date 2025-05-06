@@ -85,10 +85,11 @@ class NodeState:
         return NodeState(self.state | other.state)
 
 
-NODES: dict[str, set] = {}
+NODES: dict[str, set[str]] = {}
+NODE_DEPENDS: dict[str, set[str]] = {}
 
 
-def ensure_node(node: str):
+def define(node: str):
     parts = [*iter_node(node)]
     parts.reverse()
     MAP = NODES.setdefault(parts[0], set())
@@ -96,6 +97,12 @@ def ensure_node(node: str):
         MAP.add(part)
         MAP = NODES.setdefault(part, set())
     return node
+
+
+def depend(node: str, *depends: str):
+    if any((path := n) not in NODES for n in (node, *depends)):
+        raise ValueError(f"Node {path} not defined")
+    NODE_DEPENDS.setdefault(node, set()).update(depends)
 
 
 def iter_node(node: str):
@@ -113,7 +120,8 @@ def check_wildcard(node: str):
 
 
 if __name__ == "__main__":
-    ensure_node("a.b.c")
-    ensure_node("a.e.f")
-    print(NODES)
-    print(check_wildcard("a.*"))
+    d = {"a": NodeState("v--")}
+    state = d["a"]
+    state &= NodeState("vma")
+    print(state)
+    print(d)
