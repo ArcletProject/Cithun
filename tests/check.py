@@ -30,7 +30,6 @@ def require(
         return wrapper
 
     define(path)
-    ROOT.set(monitor.default_group, path, NodeState("vma") if default_available else NodeState("v--"))
     return decorator
 
 
@@ -44,14 +43,22 @@ def bob():
     return "bob"
 
 
+ROOT.set(user, "foo.bar.baz.*", NodeState("vma"))
+assert alice(user) == "alice"
+assert bob(user) == "bob"  # target node's parent is available
+
+
 @require("foo.bar.qux")
 def caven():
     return "caven"
 
 
-ROOT.set(user, "foo.bar.baz.*", NodeState("vma"))
-assert alice(user) == "alice"
-assert bob(user) == "bob"  # target node's parent is available
+@require("foo.bar.baz.quux")
+def dale():
+    return "dale"
+
+
+assert dale(user) == "dale"  # target node defined after the wildcard set is also available
 
 try:
     caven(user)

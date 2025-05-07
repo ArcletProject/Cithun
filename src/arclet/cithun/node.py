@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from .config import Config
+
 _MAPPING = {"-": 0, "a": 1, "m": 2, "v": 4}
 
 
@@ -107,21 +109,23 @@ def depend(node: str, *depends: str):
 
 def iter_node(node: str):
     yield node
-    while (next_idx := node.rfind(".")) != -1:
+    while (next_idx := node.rfind(Config.NODE_SEPARATOR)) != -1:
         yield node[:next_idx]
         node = node[:next_idx]
 
 
 def check_wildcard(node: str):
-    left, _, right = node.rpartition(".")
+    left, _, right = node.rpartition(Config.NODE_SEPARATOR)
     if right == "*":
         return True, left
     return False, node
 
 
-if __name__ == "__main__":
-    d = {"a": NodeState("v--")}
-    state = d["a"]
-    state &= NodeState("vma")
-    print(state)
-    print(d)
+def traversal(base: str):
+    if base not in NODES:
+        raise ValueError(f"Node {base} not defined")
+    result = []
+    for node in NODES[base]:
+        result.append(node)
+        result.extend(traversal(node))
+    return result

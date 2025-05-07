@@ -4,7 +4,7 @@ from pathlib import Path
 from typing import Iterable, Optional
 
 from arclet.cithun.monitor import SyncMonitor
-from arclet.cithun.node import NODES, NODE_DEPENDS
+from arclet.cithun.node import NODE_DEPENDS, NODES
 from arclet.cithun.owner import Owner
 
 from .owner import DefaultOwner

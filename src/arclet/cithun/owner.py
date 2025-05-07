@@ -10,6 +10,7 @@ class Owner(Protocol):
     priority: Optional[int]
     inherits: list[Owner]
     nodes: dict[str, NodeState]
+    wildcards: set[str]
 
 
 def iter_inherits(inherits: Sequence[Owner]):
