@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-from .config import Config
-
 _MAPPING = {"-": 0, "a": 1, "m": 2, "v": 4}
 
 
@@ -85,47 +83,3 @@ class NodeState:
 
     def __or__(self, other):
         return NodeState(self.state | other.state)
-
-
-NODES: dict[str, set[str]] = {}
-NODE_DEPENDS: dict[str, set[str]] = {}
-
-
-def define(node: str):
-    parts = [*iter_node(node)]
-    parts.reverse()
-    MAP = NODES.setdefault(parts[0], set())
-    for part in parts[1:]:
-        MAP.add(part)
-        MAP = NODES.setdefault(part, set())
-    return node
-
-
-def depend(node: str, *depends: str):
-    if any((path := n) not in NODES for n in (node, *depends)):
-        raise ValueError(f"Node {path} not defined")
-    NODE_DEPENDS.setdefault(node, set()).update(depends)
-
-
-def iter_node(node: str):
-    yield node
-    while (next_idx := node.rfind(Config.NODE_SEPARATOR)) != -1:
-        yield node[:next_idx]
-        node = node[:next_idx]
-
-
-def check_wildcard(node: str):
-    left, _, right = node.rpartition(Config.NODE_SEPARATOR)
-    if right == "*":
-        return True, left
-    return False, node
-
-
-def traversal(base: str):
-    if base not in NODES:
-        raise ValueError(f"Node {base} not defined")
-    result = []
-    for node in NODES[base]:
-        result.append(node)
-        result.extend(traversal(node))
-    return result

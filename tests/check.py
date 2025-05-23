@@ -3,7 +3,7 @@ from pathlib import Path
 from typing import Callable, TypeVar
 from typing_extensions import Concatenate, ParamSpec
 
-from arclet.cithun import ROOT, NodeState, define, depend
+from arclet.cithun import ROOT, NodeState
 from arclet.cithun.builtins.monitor import DefaultMonitor
 from arclet.cithun.builtins.owner import DefaultOwner
 
@@ -21,7 +21,7 @@ def require(
     def decorator(func: Callable[P, T]) -> Callable[Concatenate[DefaultOwner, P], T]:
         @wraps(func)
         def wrapper(usr: DefaultOwner, *args: P.args, **kwargs: P.kwargs) -> T:
-            state = ROOT.get(usr, path)
+            state = ROOT(monitor).get(usr, path)
             if state.available:
                 return func(*args, **kwargs)
             else:
@@ -29,7 +29,7 @@ def require(
 
         return wrapper
 
-    define(path)
+    monitor.define(path)
     return decorator
 
 
@@ -43,7 +43,7 @@ def bob():
     return "bob"
 
 
-ROOT.set(user, "foo.bar.baz.*", NodeState("vma"))
+ROOT(monitor).set(user, "foo.bar.baz.*", NodeState("vma"))
 assert alice(user) == "alice"
 assert bob(user) == "bob"  # target node's parent is available
 
@@ -66,11 +66,11 @@ except PermissionError as e:
     # raise PermissionError as caven's target node is not in the available path
     assert str(e) == "Permission denied for user:cithun to access foo.bar.qux"
 
-ROOT.set(user, "foo.bar.qux", NodeState("vma"))
+ROOT(monitor).set(user, "foo.bar.qux", NodeState("vma"))
 assert caven(user) == "caven"  # caven as target node is available
 
-depend("foo.bar.qux", "foo.bar.baz.qux")
-ROOT.set(user, "foo.bar.baz.qux", NodeState("v--"))
+monitor.depend("foo.bar.qux", "foo.bar.baz.qux")
+ROOT(monitor).set(user, "foo.bar.baz.qux", NodeState("v--"))
 
 try:
     caven(user)
