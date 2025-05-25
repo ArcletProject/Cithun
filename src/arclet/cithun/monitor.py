@@ -1,11 +1,11 @@
+import asyncio
 from abc import ABC, abstractmethod
 from collections.abc import Awaitable
 from typing import Iterable, Optional, Generic, Callable, Sequence, overload, Union
 from typing_extensions import TypeVarTuple, Unpack
 
 from .config import Config
-from .owner import Owner
-from .state import NodeState
+from .model import Owner, NodeState
 
 
 Ts = TypeVarTuple("Ts")
@@ -36,14 +36,22 @@ class BaseMonitor:
             return True, left
         return False, node
 
-    def define(self, node: str):
-        parts = [*BaseMonitor.iter_node(node)]
-        parts.reverse()
-        MAP = self.NODES.setdefault(parts[0], set())
-        for part in parts[1:]:
-            MAP.add(part)
-            MAP = self.NODES.setdefault(part, set())
-        return node
+    @overload
+    def define(self, node: str) -> str: ...
+
+    @overload
+    def define(self, node: Callable[[], Iterable[str]]) -> list[str]: ...
+
+    def define(self, node):
+        if isinstance(node, str):
+            parts = [*BaseMonitor.iter_node(node)]
+            parts.reverse()
+            MAP = self.NODES.setdefault(parts[0], set())
+            for part in parts[1:]:
+                MAP.add(part)
+                MAP = self.NODES.setdefault(part, set())
+            return node
+        return list(map(self.define, node()))
 
     def depend(self, node: str, *depends: str):
         if any((path := n) not in self.NODES for n in (node, *depends)):
@@ -153,7 +161,7 @@ class SyncMonitor(ABC, BaseMonitor, Generic[Unpack[Ts]]):
             for pattern, func in self.ATTACHES:
                 if pattern(node):
                     results.append(func(node, owner, *args))
-            if all(results):
+            if results and all(results):
                 owner.nodes[node] = state
 
 
@@ -215,9 +223,9 @@ class AsyncMonitor(ABC, BaseMonitor, Generic[Unpack[Ts]]):
 
     async def run_attach(self, owner: Owner, state: NodeState, *args: Unpack[Ts]):
         for node in self.NODES:
-            results = []
+            tasks = []
             for pattern, func in self.ATTACHES:
                 if pattern(node):
-                    results.append(await func(node, owner, *args))
-            if all(results):
+                    tasks.append(func(node, owner, *args))
+            if tasks and all(await asyncio.gather(*tasks)):
                 owner.nodes[node] = state

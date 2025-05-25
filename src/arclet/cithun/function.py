@@ -3,9 +3,8 @@ from __future__ import annotations
 from typing import Literal, Tuple, overload
 
 from .config import Config
-from .state import NodeState
+from .model import NodeState, Owner
 from .monitor import BaseMonitor
-from .owner import Owner
 
 # 分为两类方法：针对权限节点的操作，与针对权限状态的操作
 # 权限状态: get, set

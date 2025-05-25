@@ -8,6 +8,18 @@ monitor = DefaultMonitor(Path("function_monitor.json"))
 monitor.define("foo.bar.baz.qux")
 monitor.define("command.test.sub")
 monitor.define("command.test1.sub1")
+monitor.define(lambda: (f"auth.{i}" for i in range(1, 5)))
+
+
+@monitor.attach(lambda pat: pat.startswith("auth."))
+def auth_handler(node: str, owner, state) -> bool:
+    level = int(node.split(".")[-1])
+    if level == 4:
+        return any(ow.name == "owner" for ow in owner.inherits)
+    if level == 3:
+        return any(ow.name == "admin" for ow in owner.inherits)
+    return True
+
 
 with monitor.transaction():
     admin = monitor.get_or_new_owner("admin", 100)
@@ -15,6 +27,8 @@ with monitor.transaction():
 
     user = monitor.get_or_new_owner("cithun")
     monitor.inherit(user, admin)
+
+    monitor.run_attach(user, NodeState("vma"), {})
 
     assert PE(user, monitor).get(user, "foo.bar.baz") == NodeState("vma")
     assert not PE.root(monitor).get(user, "foo.bar.baz.qux").available

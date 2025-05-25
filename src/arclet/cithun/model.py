@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+from typing import Optional, Protocol
+
+
 _MAPPING = {"-": 0, "a": 1, "m": 2, "v": 4}
 
 
@@ -7,21 +10,21 @@ class NodeState:
     AVAILABLE = 1
     """
     若 state 所属的权限节点拥有子节点，则表示对应的权限拥有者默认情况下对该节点的子节点拥有使用权限
-    
+
     若 state 所属的权限节点不拥有子节点，则表示对应的权限拥有者对该节点拥有使用权限，表示对节点对应的实际内容可用
     """
 
     MODIFY = 2
     """
     若 state 所属的权限节点拥有子节点，则表示对应的权限拥有者可以修改其他权限拥有者对该权限节点及子节点的权限
-    
+
     若 state 所属的权限节点不拥有子节点，则表示对应的权限拥有者可以修改其他权限拥有者对该权限节点的权限
     """
 
     VISIT = 4
     """
     若 state 所属的权限节点拥有子节点，则表示对应的权限拥有者可以访问该节点的子节点
-    
+
     若 state 所属的权限节点不拥有子节点，则表示对应的权限拥有者可以查看节点的状态和内容
     """
 
@@ -83,3 +86,11 @@ class NodeState:
 
     def __or__(self, other):
         return NodeState(self.state | other.state)
+
+
+class Owner(Protocol):
+    name: str
+    priority: Optional[int]
+    inherits: list[Owner]
+    nodes: dict[str, NodeState]
+    wildcards: set[str]

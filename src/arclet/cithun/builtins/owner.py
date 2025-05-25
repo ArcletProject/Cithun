@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-from arclet.cithun.state import NodeState
+from arclet.cithun.model import NodeState
 
 
 @dataclass(eq=True, unsafe_hash=True)
