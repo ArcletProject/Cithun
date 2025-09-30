@@ -19,8 +19,13 @@ def iter_inherits(inherits: Sequence[Owner]):
 
 
 class BaseMonitor:
-    NODES: dict[str, set[str]]
+    NODES: dict[str, set[str]]  # {"foo": {"foo:bar", "foo:baz"}, "foo:bar": {"foo:bar:baz"}, ...}
     NODE_DEPENDS: dict[str, set[str]]
+
+    def init(self):
+        global _monitor
+
+        _monitor = self
 
     @staticmethod
     def iter_node(node: str):
@@ -127,11 +132,6 @@ class SyncMonitor(ABC, BaseMonitor, Generic[Unpack[Ts]]):
     def all_owners(self) -> Iterable[Owner]:
         pass
 
-    @property
-    @abstractmethod
-    def default_group(self) -> Owner:
-        pass
-
     @overload
     def attach(self, pattern: str) -> Callable[[Callable[[Owner, Unpack[Ts]], bool]], Callable[[Owner, Unpack[Ts]], bool]]:
         ...
@@ -192,19 +192,12 @@ class AsyncMonitor(ABC, BaseMonitor, Generic[Unpack[Ts]]):
     async def all_owners(self) -> Iterable[Owner]:
         pass
 
-    @property
-    @abstractmethod
-    def default_group(self) -> Owner:
-        pass
-
     @overload
-    def attach(self, pattern: str) -> Callable[
-        [Callable[[Owner, Unpack[Ts]], Awaitable[bool]]], Callable[[Owner, Unpack[Ts]], Awaitable[bool]]]:
+    def attach(self, pattern: str) -> Callable[[Callable[[Owner, Unpack[Ts]], Awaitable[bool]]], Callable[[Owner, Unpack[Ts]], Awaitable[bool]]]:
         ...
 
     @overload
-    def attach(self, pattern: Callable[[str], bool]) -> Callable[
-        [Callable[[str, Owner, Unpack[Ts]], Awaitable[bool]]], Callable[[str, Owner, Unpack[Ts]], Awaitable[bool]]]:
+    def attach(self, pattern: Callable[[str], bool]) -> Callable[[Callable[[str, Owner, Unpack[Ts]], Awaitable[bool]]], Callable[[str, Owner, Unpack[Ts]], Awaitable[bool]]]:
         ...
 
     def attach(self, pattern: Union[str, Callable[[str], bool]]):
@@ -229,3 +222,12 @@ class AsyncMonitor(ABC, BaseMonitor, Generic[Unpack[Ts]]):
                     tasks.append(func(node, owner, *args))
             if tasks and all(await asyncio.gather(*tasks)):
                 owner.nodes[node] = state
+
+
+_monitor: Optional[BaseMonitor] = None
+
+
+def get_monitor():
+    if _monitor is None:
+        raise ValueError("Monitor not initialized")
+    return _monitor

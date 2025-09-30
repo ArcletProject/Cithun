@@ -8,6 +8,7 @@ from arclet.cithun.builtins.monitor import DefaultMonitor
 from arclet.cithun.builtins.owner import DefaultOwner
 
 monitor = DefaultMonitor(Path("check_monitor.json"))
+monitor.init()
 
 T = TypeVar("T")
 P = ParamSpec("P")
@@ -21,7 +22,7 @@ def require(
     def decorator(func: Callable[P, T]) -> Callable[Concatenate[DefaultOwner, P], T]:
         @wraps(func)
         def wrapper(usr: DefaultOwner, *args: P.args, **kwargs: P.kwargs) -> T:
-            state = ROOT(monitor).get(usr, path)
+            state = ROOT.get(usr, path)
             if state.available:
                 return func(*args, **kwargs)
             else:
@@ -43,7 +44,7 @@ def bob():
     return "bob"
 
 
-ROOT(monitor).set(user, "foo.bar.baz.*", NodeState("vma"))
+ROOT.set(user, "foo.bar.baz.*", NodeState("vma"))
 assert alice(user) == "alice"
 assert bob(user) == "bob"  # target node's parent is available
 
@@ -66,11 +67,11 @@ except PermissionError as e:
     # raise PermissionError as caven's target node is not in the available path
     assert str(e) == "Permission denied for user:cithun to access foo.bar.qux"
 
-ROOT(monitor).set(user, "foo.bar.qux", NodeState("vma"))
+ROOT.set(user, "foo.bar.qux", NodeState("vma"))
 assert caven(user) == "caven"  # caven as target node is available
 
 monitor.depend("foo.bar.qux", "foo.bar.baz.qux")
-ROOT(monitor).set(user, "foo.bar.baz.qux", NodeState("v--"))
+ROOT.set(user, "foo.bar.baz.qux", NodeState("v--"))
 
 try:
     caven(user)
