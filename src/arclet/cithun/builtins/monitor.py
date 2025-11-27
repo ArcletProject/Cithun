@@ -5,6 +5,7 @@ from typing import Iterable, Optional
 
 from arclet.cithun.monitor import SyncMonitor
 from arclet.cithun.model import Owner
+from arclet.cithun.store import STORE
 
 from .owner import DefaultOwner
 
@@ -15,9 +16,9 @@ class DefaultMonitor(SyncMonitor[dict]):
             with self.file.open("r", encoding="utf-8") as f:
                 data = json.load(f)
             for part, subs in data["nodes"].items():
-                self.NODES.setdefault(part, set()).update(subs)
+                STORE.NODES.setdefault(part, set()).update(subs)
             for part, subs in data["depends"].items():
-                self.NODE_DEPENDS.setdefault(part, set()).update(subs)
+                STORE.NODE_DEPENDS.setdefault(part, set()).update(subs)
             owners = {name: DefaultOwner.parse(raw) for name, raw in data["owners"].items()}
             _default_group = owners.pop("group:default", None)
             self.OWNER_TABLE.update(owners)
@@ -34,8 +35,8 @@ class DefaultMonitor(SyncMonitor[dict]):
     def save(self):
         data = {
             "owners": {owner.name: owner.dump() for owner in self.OWNER_TABLE.values()},
-            "nodes": {part: list(subs) for part, subs in self.NODES.items()},
-            "depends": {part: list(subs) for part, subs in self.NODE_DEPENDS.items()},
+            "nodes": {part: list(subs) for part, subs in STORE.NODES.items()},
+            "depends": {part: list(subs) for part, subs in STORE.NODE_DEPENDS.items()},
         }
         with self.file.open("w", encoding="utf-8") as f:
             json.dump(data, f, ensure_ascii=False, indent=2)
@@ -65,8 +66,6 @@ class DefaultMonitor(SyncMonitor[dict]):
             raise ValueError(file)
         self.file = file
         self.OWNER_TABLE = {"group:default": DefaultOwner("group:default", 100)}
-        self.NODES = {}
-        self.NODE_DEPENDS = {}
         self.ATTACHES = []
 
     @contextmanager

@@ -2,9 +2,10 @@ from __future__ import annotations
 
 from typing import Literal, Tuple, overload, ClassVar
 
+from . import store
 from .config import Config
 from .model import NodeState, Owner
-from .monitor import BaseMonitor, get_monitor
+
 
 # 分为两类方法：针对权限节点的操作，与针对权限状态的操作
 # 权限状态: get, set
@@ -28,7 +29,7 @@ from .monitor import BaseMonitor, get_monitor
 
 def _check(path: str, nodes: dict[str, NodeState], expect: NodeState, wildcards: set[str]):
     if path not in nodes:
-        if intersect := (wildcards & set(BaseMonitor.iter_node(path))):
+        if intersect := (wildcards & set(store.iter_node(path))):
             path = intersect.pop()
         else:
             return (NodeState(Config.DEFAULT_DIR) & expect) == expect
@@ -40,10 +41,10 @@ class PermissionExecutor:
     def __init__(self, executor: Owner):
         self.executor = executor
 
-    def _check_self(self, node: str, expected: Tuple[NodeState, NodeState], monitor: BaseMonitor):
-        _executor_nodes = monitor.export(self.executor)
+    def _check_self(self, node: str, expected: Tuple[NodeState, NodeState]):
+        _executor_nodes = store.export(self.executor)
 
-        for parent in monitor.iter_node(node):
+        for parent in store.iter_node(node):
             if parent == node:
                 continue
             if not _check(parent, _executor_nodes, expected[0], self.executor.wildcards):
@@ -64,19 +65,18 @@ class PermissionExecutor:
             node (str): 目标节点
             missing_ok (bool, optional): 是否允许不存在. Defaults to False.
         """
-        monitor = get_monitor()
-        if node not in monitor.NODES:
+        if node not in store.STORE.NODES:
             if missing_ok:
                 return
             raise FileNotFoundError(f"node {node} not exists")
-        if not self._check_self(node, (NodeState("v-a"), NodeState("v--")), monitor):
+        if not self._check_self(node, (NodeState("v-a"), NodeState("v--"))):
             raise PermissionError(f"permission denied for {self.executor} to access {node}")
-        _nodes = monitor.export(target)
+        _nodes = store.export(target)
         if node not in _nodes:
-            if intersect := (target.wildcards & set(monitor.iter_node(node))):
+            if intersect := (target.wildcards & set(store.iter_node(node))):
                 node = intersect.pop()
             else:
-                return NodeState(Config.DEFAULT_DIR if monitor.NODES[node] else Config.DEFAULT_FILE)
+                return NodeState(Config.DEFAULT_DIR if store.STORE.NODES[node] else Config.DEFAULT_FILE)
         state = _nodes[node]
         return state
 
@@ -97,21 +97,20 @@ class PermissionExecutor:
             missing_ok (bool, optional): 是否允许不存在. Defaults to False.
             recursive (bool, optional): 是否递归. Defaults to False.
         """
-        monitor = get_monitor()
-        is_wildcard, node = monitor.check_wildcard(node)
+        is_wildcard, node = store.check_wildcard(node)
         if is_wildcard:
             target.wildcards.add(node)
         recursive = is_wildcard or recursive
-        if node not in monitor.NODES:
+        if node not in store.STORE.NODES:
             if missing_ok:
                 return
             raise FileNotFoundError(f"node {node} not exists")
-        if not self._check_self(node, (NodeState("vma"), NodeState("-m-")), monitor):
+        if not self._check_self(node, (NodeState("vma"), NodeState("-m-"))):
             raise PermissionError(f"permission denied for {self.executor} to modify {target}'s permission")
         target.nodes[node] = state
-        if recursive and monitor.NODES[node]:
-            for sub_node in monitor.NODES[node]:
-                self.root.set(target, sub_node, state, missing_ok, recursive if monitor.NODES[sub_node] else False)
+        if recursive and store.STORE.NODES[node]:
+            for sub_node in store.STORE.NODES[node]:
+                self.root.set(target, sub_node, state, missing_ok, recursive if store.STORE.NODES[sub_node] else False)
 
     def create(self, path: str, parent: bool = True, exist_ok: bool = False):
         """创建节点
@@ -121,28 +120,27 @@ class PermissionExecutor:
             parent (bool, optional): 是否创建父节点. Defaults to True.
             exist_ok (bool, optional): 是否允许已存在. Defaults to False.
         """
-        monitor = get_monitor()
-        next(gen := monitor.iter_node(path))
+        next(gen := store.iter_node(path))
         parent_path = next(gen, None)
         if not parent_path:
-            if path in monitor.NODES:
+            if path in store.STORE.NODES:
                 if exist_ok:
                     return
                 raise FileExistsError(f"node {path} already exists")
-            monitor.define(path)
+            store.define(path)
             return
-        if parent_path not in monitor.NODES:
+        if parent_path not in store.STORE.NODES:
             if parent:
                 self.create(parent_path, parent, exist_ok=True)
             else:
                 raise FileNotFoundError(f"node {parent_path} not exists")
-        if path in monitor.NODES:
+        if path in store.STORE.NODES:
             if exist_ok:
                 return
             raise FileExistsError(f"node {path} already exists")
-        if not self._check_self(parent_path, (NodeState("v-a"), NodeState("-m-")), monitor):
+        if not self._check_self(parent_path, (NodeState("v-a"), NodeState("-m-"))):
             raise PermissionError(f"permission denied for {self.executor} to create {path}")
-        monitor.define(path)
+        store.define(path)
         return
 
     root: ClassVar[RootPermissionExecutor]

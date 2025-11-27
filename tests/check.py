@@ -3,12 +3,11 @@ from pathlib import Path
 from typing import Callable, TypeVar
 from typing_extensions import Concatenate, ParamSpec
 
-from arclet.cithun import ROOT, NodeState
+from arclet.cithun import ROOT, NodeState, store
 from arclet.cithun.builtins.monitor import DefaultMonitor
 from arclet.cithun.builtins.owner import DefaultOwner
 
 monitor = DefaultMonitor(Path("check_monitor.json"))
-monitor.init()
 
 T = TypeVar("T")
 P = ParamSpec("P")
@@ -30,7 +29,7 @@ def require(
 
         return wrapper
 
-    monitor.define(path)
+    store.define(path)
     return decorator
 
 
@@ -70,7 +69,7 @@ except PermissionError as e:
 ROOT.set(user, "foo.bar.qux", NodeState("vma"))
 assert caven(user) == "caven"  # caven as target node is available
 
-monitor.depend("foo.bar.qux", "foo.bar.baz.qux")
+store.depend("foo.bar.qux", "foo.bar.baz.qux")
 ROOT.set(user, "foo.bar.baz.qux", NodeState("v--"))
 
 try:

@@ -1,15 +1,14 @@
 from pathlib import Path
 
-from arclet.cithun import PE, NodeState
+from arclet.cithun import PE, NodeState, store
 from arclet.cithun.builtins.monitor import DefaultMonitor
 
 monitor = DefaultMonitor(Path("function_monitor.json"))
-monitor.init()
 
-monitor.define("foo.bar.baz.qux")
-monitor.define("command.test.sub")
-monitor.define("command.test1.sub1")
-monitor.define(lambda: (f"auth.{i}" for i in range(1, 5)))
+store.define("foo.bar.baz.qux")
+store.define("command.test.sub")
+store.define("command.test1.sub1")
+store.define(lambda: (f"auth.{i}" for i in range(1, 5)))
 
 
 @monitor.attach(lambda pat: pat.startswith("auth."))
