@@ -1,96 +1,75 @@
 from __future__ import annotations
 
-from typing import Optional, Protocol
+from typing import ClassVar
+from dataclasses import dataclass, field
+from enum import Enum, IntFlag, auto
 
 
-_MAPPING = {"-": 0, "a": 1, "m": 2, "v": 4}
+class Permission(IntFlag):
+    NONE = 0
+    AVAILABLE = auto()
+    MODIFY = auto()
+    VISIT = auto()
 
 
-class NodeState:
-    AVAILABLE = 1
+class InheritMode(str, Enum):
+    INHERIT = "INHERIT"    # 完全继承父节点
+    MERGE = "MERGE"        # 父 + 子合并
+    OVERRIDE = "OVERRIDE"  # 只看当前节点
+
+@dataclass
+class ResourceNode:
+    id: str
+    name: str
+    parent_id: str | None = None
+    inherit_mode: InheritMode = InheritMode.MERGE
+    type: str = "GENERIC"  # FILE / DIR / PROJECT / etc.
+
+
+class SubjectType(str, Enum):
+    USER = "USER"
+    ROLE = "ROLE"
+
+@dataclass
+class Role:
+    id: str
+    name: str
+    parent_role_ids: list[str] = field(default_factory=list)
+
+    type: ClassVar[SubjectType] = SubjectType.ROLE
+
+@dataclass
+class User:
+    id: str
+    name: str
+    role_ids: list[str] = field(default_factory=list)
+
+    type: ClassVar[SubjectType] = SubjectType.USER
+
+
+@dataclass
+class AclDependency:
     """
-    若 state 所属的权限节点拥有子节点，则表示对应的权限拥有者默认情况下对该节点的子节点拥有使用权限
-
-    若 state 所属的权限节点不拥有子节点，则表示对应的权限拥有者对该节点拥有使用权限，表示对节点对应的实际内容可用
+    描述一个 ACL 对“另一个 subject 在某资源上的权限”的依赖
     """
+    subject_type: SubjectType
+    subject_id: str
+    resource_id: str
+    required_mask: int
 
-    MODIFY = 2
-    """
-    若 state 所属的权限节点拥有子节点，则表示对应的权限拥有者可以修改其他权限拥有者对该权限节点及子节点的权限
-
-    若 state 所属的权限节点不拥有子节点，则表示对应的权限拥有者可以修改其他权限拥有者对该权限节点的权限
-    """
-
-    VISIT = 4
-    """
-    若 state 所属的权限节点拥有子节点，则表示对应的权限拥有者可以访问该节点的子节点
-
-    若 state 所属的权限节点不拥有子节点，则表示对应的权限拥有者可以查看节点的状态和内容
-    """
-
-    def __init__(self, state: int | str):
-        if isinstance(state, str):
-            state = sum(_MAPPING[i] for i in state.lower() if i in _MAPPING)
-        if state < 0 or state > 7:
-            raise ValueError("state must be in range [0, 7]")
-        self.state = state
-
-    @property
-    def available(self):
-        return self.state & NodeState.AVAILABLE == NodeState.AVAILABLE
-
-    @property
-    def modify(self):
-        return self.state & NodeState.MODIFY == NodeState.MODIFY
-
-    @property
-    def visit(self):
-        return self.state & NodeState.VISIT == NodeState.VISIT
+@dataclass
+class AclEntry:
+    id: str
+    subject_type: SubjectType
+    subject_id: str
+    resource_id: str
+    allow_mask: int
+    deny_mask: int = 0
+    dependencies: list[AclDependency] = field(default_factory=list)
 
     def __repr__(self):
-        state = ["-", "-", "-"]
-        if self.available:
-            state[2] = "a"
-        if self.modify:
-            state[1] = "m"
-        if self.visit:
-            state[0] = "v"
-        return "".join(state)
-
-    def __gt__(self, other):
-        return self.state > other.state
-
-    def __ge__(self, other):
-        return self.state >= other.state
-
-    def __lt__(self, other):
-        return self.state < other.state
-
-    def __le__(self, other):
-        return self.state <= other.state
-
-    def __eq__(self, other):
-        return self.state == other.state
-
-    def __hash__(self):
-        return hash(self.state)
-
-    def __bool__(self):
-        return bool(self.state)
-
-    def __int__(self):
-        return self.state
-
-    def __and__(self, other):
-        return NodeState(self.state & other.state)
-
-    def __or__(self, other):
-        return NodeState(self.state | other.state)
-
-
-class Owner(Protocol):
-    name: str
-    priority: Optional[int]
-    inherits: list[Owner]
-    nodes: dict[str, NodeState]
-    wildcards: set[str]
+        return (
+            f"AclEntry(id={self.id}, subject={self.subject_type.value}:{self.subject_id}, "
+            f"resource={self.resource_id}, allow={Permission(self.allow_mask)!r}, "
+            f"deps={self.dependencies})"
+        )
