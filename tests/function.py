@@ -1,46 +1,57 @@
 from pathlib import Path
 
-from arclet.cithun import PE, NodeState, store
-from arclet.cithun.builtins.monitor import DefaultMonitor
+from arclet.cithun import Permission, User, Role, ResourceNode
+from arclet.cithun.builtins import System
 
-monitor = DefaultMonitor(Path("function_monitor.json"))
+monitor = System(Path("function_monitor.json"))
 
-store.define("foo.bar.baz.qux")
-store.define("command.test.sub")
-store.define("command.test1.sub1")
-store.define(lambda: (f"auth.{i}" for i in range(1, 5)))
+monitor.store.define("foo.bar.baz.qux")
+monitor.store.define("command.test.sub")
+monitor.store.define("command.test1.sub1")
 
+# @monitor.service.engine.register_strategy
+# def auth_handler(
+#     user: User,
+#     resource: ResourceNode,
+#     context: tuple[dict],
+#     current_mask: int,
+#     permission_lookup
+# ):
+    
+    
 
-@monitor.attach(lambda pat: pat.startswith("auth."))
-def auth_handler(node: str, owner, state) -> bool:
-    level = int(node.split(".")[-1])
-    if level == 4:
-        return any(ow.name == "owner" for ow in owner.inherits)
-    if level == 3:
-        return any(ow.name == "admin" for ow in owner.inherits)
-    return True
+# @monitor.attach(lambda pat: pat.startswith("auth."))
+# def auth_handler(node: str, owner, state) -> bool:
+#     level = int(node.split(".")[-1])
+#     if level == 4:
+#         return any(ow.name == "owner" for ow in owner.inherits)
+#     if level == 3:
+#         return any(ow.name == "admin" for ow in owner.inherits)
+#     return True
 
 
 with monitor.transaction():
-    admin = monitor.get_or_new_owner("admin", 100)
-    PE.root.set(admin, "foo.bar.baz", NodeState("vma"))
+    monitor.storage.define("foo.bar.baz")
+    monitor.storage.define("foo.bar.baz.qux")
+    admin = monitor.store.add_role(Role("role:admin", "Administrator"))
+    admin_baz = monitor.suset(admin, "foo.bar.baz", Permission.VISIT | Permission.AVAILABLE | Permission.MODIFY)
 
-    user = monitor.get_or_new_owner("cithun")
-    monitor.inherit(user, admin)
+    user = monitor.store.add_user(User("user:cithun", "cithun"))
+    monitor.store.inherit(user, admin)
 
-    monitor.run_attach(user, NodeState("vma"), {})
+    # monitor.run_attach(user, NodeState("vma"), {})
 
-    assert PE(user).get(user, "foo.bar.baz") == NodeState("vma")
-    assert not PE.root.get(user, "foo.bar.baz.qux").available
+    assert monitor.test(user, "foo.bar.baz", Permission.VISIT)
+    assert not monitor.test(user, "foo.bar.baz.qux", Permission.AVAILABLE)
 
-    PE.root.set(user, "foo.bar.baz.qux", NodeState(7))
-    assert PE.root.get(user, "foo.bar.baz.qux").available
+    assert monitor.suset(user, "foo.bar.baz.qux", Permission(7))
+    assert monitor.get(user, "foo.bar.baz.qux") == Permission.VISIT | Permission.AVAILABLE | Permission.MODIFY
 
-    PE.root.set(admin, "foo.bar.baz", NodeState("v-a"))
+    monitor.suset(admin, "foo.bar.baz", Permission.VISIT | Permission.AVAILABLE)
     try:
-        PE(user).set(user, "foo.bar.baz.qux", NodeState("vm-"))
+        monitor.set(user, user, "foo.bar.baz.qux", Permission.VISIT | Permission.MODIFY)
     except PermissionError as e:
         print(e)  # Permission denied as "foo.bar.baz" is not modifiable
 
-    PE.root.set(user, "command.*", NodeState("vma"))
-    assert PE(user).get(user, "command.test.sub") == NodeState("vma")
+    # PE.root.set(user, "command.*", NodeState("vma"))
+    # assert PE(user).get(user, "command.test.sub") == NodeState("vma")
