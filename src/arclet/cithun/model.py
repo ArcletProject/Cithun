@@ -17,6 +17,7 @@ class InheritMode(str, Enum):
     MERGE = "MERGE"        # 父 + 子合并
     OVERRIDE = "OVERRIDE"  # 只看当前节点
 
+
 @dataclass
 class ResourceNode:
     id: str

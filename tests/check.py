@@ -11,7 +11,7 @@ monitor = System(Path("check_monitor.json"))
 T = TypeVar("T")
 P = ParamSpec("P")
 
-user = monitor.store.add_user(User("user:cithun", "cithun"))
+user = monitor.add_user(User("user:cithun", "cithun"))
 
 
 def require(
@@ -27,7 +27,7 @@ def require(
 
         return wrapper
 
-    monitor.store.define(path)
+    monitor.define(path)
     return decorator
 
 
@@ -66,10 +66,14 @@ except PermissionError as e:
     # raise PermissionError as caven's target node is not in the available path
     assert str(e) == "Permission denied for cithun to access foo.bar.qux"
 
-user_qux = monitor.suset(user, "foo.bar.qux", Permission.VISIT | Permission.AVAILABLE | Permission.MODIFY)
+monitor.suset(user, "foo.bar.qux", Permission.VISIT | Permission.AVAILABLE | Permission.MODIFY)
 assert caven(user) == "caven"  # caven as target node is available
 
-monitor.store.depend(user_qux, user, "foo.bar.baz.qux", Permission.VISIT)
+monitor.depend(
+    user, "foo.bar.qux",
+    user, "foo.bar.baz.qux",
+    Permission.VISIT
+)
 monitor.suset(user, "foo.bar.baz.qux", Permission.VISIT)
 try:
     caven(user)

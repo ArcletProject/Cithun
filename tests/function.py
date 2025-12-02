@@ -1,13 +1,13 @@
 from pathlib import Path
 
-from arclet.cithun import Permission, User, Role, ResourceNode
+from arclet.cithun import Permission, User, Role, InheritMode
 from arclet.cithun.builtins import System
 
 monitor = System(Path("function_monitor.json"))
 
-monitor.store.define("foo.bar.baz.qux")
-monitor.store.define("command.test.sub")
-monitor.store.define("command.test1.sub1")
+monitor.define("foo.bar.baz.qux", InheritMode.OVERRIDE)
+monitor.define("command.test.sub")
+monitor.define("command.test1.sub1")
 
 # @monitor.service.engine.register_strategy
 # def auth_handler(
@@ -31,20 +31,18 @@ monitor.store.define("command.test1.sub1")
 
 
 with monitor.transaction():
-    monitor.storage.define("foo.bar.baz")
-    monitor.storage.define("foo.bar.baz.qux")
-    admin = monitor.store.add_role(Role("role:admin", "Administrator"))
-    admin_baz = monitor.suset(admin, "foo.bar.baz", Permission.VISIT | Permission.AVAILABLE | Permission.MODIFY)
+    admin = monitor.add_role(Role("role:admin", "Administrator"))
+    monitor.suset(admin, "foo.bar.baz", Permission.VISIT | Permission.AVAILABLE | Permission.MODIFY)
 
-    user = monitor.store.add_user(User("user:cithun", "cithun"))
-    monitor.store.inherit(user, admin)
+    user = monitor.add_user(User("user:cithun", "cithun"))
+    monitor.inherit(user, admin)
 
     # monitor.run_attach(user, NodeState("vma"), {})
 
     assert monitor.test(user, "foo.bar.baz", Permission.VISIT)
     assert not monitor.test(user, "foo.bar.baz.qux", Permission.AVAILABLE)
 
-    assert monitor.suset(user, "foo.bar.baz.qux", Permission(7))
+    monitor.suset(user, "foo.bar.baz.qux", Permission(7))
     assert monitor.get(user, "foo.bar.baz.qux") == Permission.VISIT | Permission.AVAILABLE | Permission.MODIFY
 
     monitor.suset(admin, "foo.bar.baz", Permission.VISIT | Permission.AVAILABLE)
@@ -53,5 +51,6 @@ with monitor.transaction():
     except PermissionError as e:
         print(e)  # Permission denied as "foo.bar.baz" is not modifiable
 
-    # PE.root.set(user, "command.*", NodeState("vma"))
-    # assert PE(user).get(user, "command.test.sub") == NodeState("vma")
+    monitor.suset(user, "command.test", Permission(5))
+    monitor.suset(user, "command.test.*", Permission(5))
+    assert monitor.get(user, "command.test.sub") == Permission(5)

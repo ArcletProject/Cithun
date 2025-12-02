@@ -1,8 +1,14 @@
 from __future__ import annotations
 
+from collections.abc import Callable
+from re import Pattern
+
 from .store import BaseStore
 from .service import PermissionService
-from .model import AclEntry, Permission, ResourceNode, User, Role
+from .model import Permission, ResourceNode, User, Role
+from .config import Config
+
+
 class PermissionNotFoundError(KeyError):
     """资源不存在或父资源不存在时抛出。"""
     pass
@@ -42,7 +48,7 @@ class PermissionExecutor:
         返回 (parent_node, self_node)，其中任意一个可能为 None（若不存在）。
         如果 missing_ok=False 时，按规则抛出 PermissionNotFoundError。
         """
-        path = resource_path.strip("/")
+        path = resource_path.strip(Config.NODE_SEPARATOR)
         if not path:
             # 根节点没有父节点的概念，这里约定 parent=None, self=root(如果存在)
             root = self.storage.resources.get("root")
@@ -53,8 +59,8 @@ class PermissionExecutor:
         # 获取 self
         self_node = self.storage.resources.get(path)
         # 获取 parent
-        if "/" in path:
-            parent_id = path.rsplit("/", 1)[0]
+        if Config.NODE_SEPARATOR in path:
+            parent_id = path.rsplit(Config.NODE_SEPARATOR, 1)[0]
         else:
             parent_id = None
         parent_node = self.storage.resources.get(parent_id) if parent_id else None
@@ -86,22 +92,6 @@ class PermissionExecutor:
             # 自动创建
             node = self.storage.define(resource_path)
         return parent, node
-
-    def _get_primary_acl(
-        self,
-        subject: User | Role,
-        resource_id: str,
-    ) -> AclEntry | None:
-        """
-        返回第一个匹配 subject+resource 的 ACL，视为主 ACL。
-        若不存在则返回 None。
-        """
-        for acl in self.storage.acls:
-            if (acl.subject_type == subject.type and
-                    acl.subject_id == subject.id and
-                    acl.resource_id == resource_id):
-                return acl
-        return None
 
     def _apply_chmod(
         self,
@@ -184,8 +174,6 @@ class PermissionExecutor:
             mask = Permission.VISIT | Permission.AVAILABLE
         return (mask & required_mask) == required_mask
 
-    # ---------- get：执行者获取自己在目标节点的权限状态 ----------
-
     def get(
         self,
         executor: User,
@@ -230,16 +218,14 @@ class PermissionExecutor:
             )
         return self_mask
 
-    # ---------- suset：root 设置权限状态 ----------
-
     def suset(
         self,
         subject: User | Role,
-        resource_path: str,
+        resource_path: str | Callable[[str], bool] | Pattern[str],
         mask: int,
         mode: str = "=",
         missing_ok: bool = False,
-    ) -> AclEntry:
+    ) -> None:
         """
         root 为 subject 在指定节点上“设置权限状态”。
 
@@ -255,47 +241,62 @@ class PermissionExecutor:
             - "+" : 在旧权限基础上增加 mask
             - "-" : 在旧权限基础上删除 mask
         """
-        _, node = self._ensure_resource_for_set(resource_path, missing_ok=missing_ok)
 
-        # 删除旧 ACL（简单实现：同 subject + 同 resource 的都删）
-        # self.storage.acls = [
-        #     acl for acl in self.storage.acls
-        #     if not (acl.subject_type == subject.type and
-        #             acl.subject_id == subject.id and
-        #             acl.resource_id == node.id)
-        # ]
-        # # 设置新 ACL
-        # return self.storage.assign(
-        #     subject=subject,
-        #     resource_path=node.id,  # 这里使用节点 id（已经是标准化 path）
-        #     allow_mask=new_mask,
-        primary_acl = self._get_primary_acl(subject, node.id)
-        old_mask = primary_acl.allow_mask if primary_acl else 0
-        new_mask = self._apply_chmod(old_mask, mask, mode)
-        if primary_acl:
-            # 更新已有 ACL
-            primary_acl.allow_mask = new_mask
-            return primary_acl
+        if isinstance(resource_path, str):
+            resource_path = resource_path.strip(Config.NODE_SEPARATOR)
+            if "*" in resource_path or "?" in resource_path or "[" in resource_path:
+                matched = self.storage.glob_resources(resource_path)
+            else:
+                _, node = self._ensure_resource_for_set(resource_path, missing_ok=missing_ok)
+
+                primary_acl = self.storage.get_primary_acl(subject, node.id)
+                old_mask = primary_acl.allow_mask if primary_acl else 0
+                new_mask = self._apply_chmod(old_mask, mask, mode)
+                if primary_acl:
+                    # 更新已有 ACL
+                    primary_acl.allow_mask = new_mask
+                else:
+                    # 创建新 ACL
+                    self.storage.assign(
+                        subject=subject,
+                        resource_path=node.id,
+                        allow_mask=new_mask,
+                    )
+                return
+        elif isinstance(resource_path, Pattern):
+            matched = self.storage.match_resources(lambda t: bool(resource_path.fullmatch(t)))
         else:
-            # 创建新 ACL
-            return self.storage.assign(
-                subject=subject,
-                resource_path=node.id,
-                allow_mask=new_mask,
-            )
+            matched = self.storage.match_resources(resource_path)
+        for node in matched:
+            if node.parent_id and node.parent_id not in self.storage.resources:
+                if not missing_ok:
+                    raise PermissionNotFoundError(f"Parent '{node.parent_id}' for '{node.id}' not found")
+                else:
+                    continue
 
-    # ---------- set：执行者设置目标节点的权限状态 ----------
+            primary_acl = self.storage.get_primary_acl(subject, node.id)
+            old_mask = primary_acl.allow_mask if primary_acl else 0
+            new_mask = self._apply_chmod(old_mask, mask, mode)
+
+            if primary_acl is None:
+                self.storage.assign(
+                    subject=subject,
+                    resource_path=node.id,
+                    allow_mask=new_mask,
+                )
+            else:
+                primary_acl.allow_mask = new_mask
 
     def set(
         self,
         executor: User,
         target: User | Role,
-        resource_path: str,
+        resource_path: str | Callable[[str], bool] | Pattern[str],
         mask: int,
         mode: str = "=",
         missing_ok: bool = False,
         context: tuple | None = None,
-    ) -> AclEntry | None:
+    ) -> None:
         """
         执行者为目标 subject 设置目标节点的权限状态。
 
@@ -311,38 +312,83 @@ class PermissionExecutor:
         """
         context = context or ()
 
-        parent, node = self._ensure_resource_for_set(resource_path, missing_ok=missing_ok)
+        if isinstance(resource_path, str):
+            resource_path = resource_path.strip(Config.NODE_SEPARATOR)
+            if "*" in resource_path or "?" in resource_path or "[" in resource_path:
+                matched = self.storage.glob_resources(resource_path)
+            else:
+                parent, node = self._ensure_resource_for_set(resource_path, missing_ok=missing_ok)
 
-        # 2. 检查执行者在父节点是否有 v+m+a
-        if parent is not None:
-            parent_mask = self.perm_service.get_effective_permissions(
-                executor, parent.id, context
-            )
-            required_parent = Permission.VISIT | Permission.MODIFY | Permission.AVAILABLE
-            if (parent_mask & required_parent) != required_parent:
-                raise PermissionDeniedError(
-                    f"Executor '{executor.id}' lacks V+M+A on parent '{parent.id}'"
+                # 2. 检查执行者在父节点是否有 v+m+a
+                if parent is not None:
+                    parent_mask = self.perm_service.get_effective_permissions(
+                        executor, parent.id, context
+                    )
+                    required_parent = Permission.VISIT | Permission.MODIFY | Permission.AVAILABLE
+                    if (parent_mask & required_parent) != required_parent:
+                        raise PermissionDeniedError(
+                            f"Executor '{executor.id}' lacks V+M+A on parent '{parent.id}'"
+                        )
+
+                # 4. 检查执行者在自身是否有 MODIFY
+                self_mask = self.perm_service.get_effective_permissions(
+                    executor, node.id, context
                 )
+                if (self_mask & Permission.MODIFY) != Permission.MODIFY:
+                    # 不修改该节点状态
+                    return
 
-        # 4. 检查执行者在自身是否有 MODIFY
-        self_mask = self.perm_service.get_effective_permissions(
-            executor, node.id, context
-        )
-        if (self_mask & Permission.MODIFY) != Permission.MODIFY:
-            # 不修改该节点状态
-            return
-
-        primary_acl = self._get_primary_acl(target, node.id)
-        old_mask = primary_acl.allow_mask if primary_acl else 0
-        new_mask = self._apply_chmod(old_mask, mask, mode)
-        if primary_acl:
-            # 更新已有 ACL
-            primary_acl.allow_mask = new_mask
-            return primary_acl
+                primary_acl = self.storage.get_primary_acl(target, node.id)
+                old_mask = primary_acl.allow_mask if primary_acl else 0
+                new_mask = self._apply_chmod(old_mask, mask, mode)
+                if primary_acl:
+                    # 更新已有 ACL
+                    primary_acl.allow_mask = new_mask
+                else:
+                    # 创建新 ACL
+                    self.storage.assign(
+                        subject=target,
+                        resource_path=node.id,
+                        allow_mask=new_mask,
+                    )
+                return
+        elif isinstance(resource_path, Pattern):
+            matched = self.storage.match_resources(lambda t: bool(resource_path.fullmatch(t)))
         else:
-            # 创建新 ACL
-            return self.storage.assign(
-                subject=target,
-                resource_path=node.id,
-                allow_mask=new_mask,
+            matched = self.storage.match_resources(resource_path)
+        for node in matched:
+            parent = self.storage.resources.get(node.parent_id) if node.parent_id else None
+            if node.parent_id and parent is None:
+                if not missing_ok:
+                    raise PermissionNotFoundError(f"Parent '{node.parent_id}' for '{node.id}' not found")
+                else:
+                    continue
+            if parent is not None:
+                parent_mask = self.perm_service.get_effective_permissions(
+                    executor, parent.id, context
+                )
+                required_parent = Permission.VISIT | Permission.MODIFY | Permission.AVAILABLE
+                if (parent_mask & required_parent) != required_parent:
+                    raise PermissionDeniedError(
+                        f"Executor '{executor.id}' lacks V+M+A on parent '{parent.id}'"
+                    )
+            self_mask = self.perm_service.get_effective_permissions(
+                executor, node.id, context
             )
+            if (self_mask & Permission.MODIFY) != Permission.MODIFY:
+                continue  # 无修改权限，跳过
+
+            # 5. chmod 更新目标 subject
+            primary_acl = self.storage.get_primary_acl(target, node.id)
+            old_mask = primary_acl.allow_mask if primary_acl else 0
+            new_mask = self._apply_chmod(old_mask, mask, mode)
+            if primary_acl:
+                # 更新已有 ACL
+                primary_acl.allow_mask = new_mask
+            else:
+                # 创建新 ACL
+                self.storage.assign(
+                    subject=target,
+                    resource_path=node.id,
+                    allow_mask=new_mask,
+                )

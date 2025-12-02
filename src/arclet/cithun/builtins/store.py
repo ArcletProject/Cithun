@@ -5,6 +5,7 @@ from pathlib import Path
 from arclet.cithun.store import BaseStore
 from arclet.cithun.model import User, Role, AclEntry, AclDependency, ResourceNode
 
+
 class JsonStore(BaseStore):
     def load(self):
         if self.file.exists():
@@ -53,7 +54,6 @@ class JsonStore(BaseStore):
                 data["acl_dependencies"][acl.id] = dep_rows
         with self.file.open("w", encoding="utf-8") as f:
             json.dump(data, f, ensure_ascii=False, indent=2)
-
 
     def __init__(self, file: Path):
         if not file.suffix.startswith(".json"):

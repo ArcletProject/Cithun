@@ -1,5 +1,9 @@
 from __future__ import annotations
+
+from collections.abc import Callable
+from re import Pattern
 from typing import Iterable
+import fnmatch
 
 from .model import (
     AclDependency,
@@ -7,9 +11,10 @@ from .model import (
     InheritMode,
     ResourceNode,
     Role,
-    SubjectType,
     User,
 )
+from .config import Config
+
 
 class BaseStore:
     """
@@ -66,13 +71,13 @@ class BaseStore:
         inherit_mode: InheritMode = InheritMode.MERGE,
         type_: str = "GENERIC",
     ) -> ResourceNode:
-        parts = [p for p in path.strip("/").split("/") if p]
+        parts = [p for p in path.strip(Config.NODE_SEPARATOR).split(Config.NODE_SEPARATOR) if p]
         if not parts:
             raise ValueError("path must not be empty")
 
         current_parent_id: str | None = None
         for i, part in enumerate(parts):
-            current_id = f"{current_parent_id}/{part}" if current_parent_id else part
+            current_id = f"{current_parent_id}{Config.NODE_SEPARATOR}{part}" if current_parent_id else part
             is_last = (i == len(parts) - 1)
             
             if current_id not in self.resources:
@@ -85,47 +90,104 @@ class BaseStore:
                 )
             current_parent_id = current_id
             
-        return self.resources[current_parent_id] # type: ignore
+        return self.resources[current_parent_id]  # type: ignore
+
+    def glob_resources(self, pattern: str) -> list[ResourceNode]:
+        """
+        简单 glob 匹配资源 id：
+        - 支持 '*' 单层匹配（这里直接用 fnmatch.fnmatch 处理，语义与 Unix shell 类似）
+        - 仅匹配已存在的资源
+        """
+        pattern = pattern.strip(Config.NODE_SEPARATOR)
+        result = []
+        for res in self.resources.values():
+            rid = res.id.strip(Config.NODE_SEPARATOR)
+            if fnmatch.fnmatch(rid, pattern):
+                result.append(res)
+        return result
+
+    def match_resources(self, pattern: Callable[[str], bool]) -> list[ResourceNode]:
+        result = []
+        for res in self.resources.values():
+            rid = res.id.strip(Config.NODE_SEPARATOR)
+            if pattern(rid):
+                result.append(res)
+        return result
 
     def assign(
         self,
         subject: User | Role,
-        resource_path: str,
+        resource_path: str | Callable[[str], bool] | Pattern[str],
         allow_mask: int,
         deny_mask: int = 0,
         acl_id: str | None = None,
-    ) -> AclEntry:
-        subject_id = subject.id
-        subject_type = SubjectType.USER if isinstance(subject, User) else SubjectType.ROLE
-        res = self.define(resource_path)
-        if acl_id is None:
-            self._acl_counter += 1
-            acl_id = f"acl_{subject_type.value.lower()}_{subject_id}_{res.id}_{self._acl_counter}"
+    ) -> None:
+        """
+        为指定 subject 在资源上分配 ACL。
 
-        acl = AclEntry(
-            id=acl_id,
-            subject_type=subject_type,
-            subject_id=subject_id,
-            resource_id=res.id,
-            allow_mask=allow_mask,
-            deny_mask=deny_mask,
-        )
-        self.add_acl(acl)
-        return acl
+        若 resource_path 中包含 '*'，则按 glob 匹配所有已存在资源，对每个资源应用同一个策略；
+        否则对单一资源进行操作。
+
+        注意：
+        - assign 只会“创建新 ACL”，不会更新已有 ACL；
+        - 对已经存在主 ACL 的 subject+resource，应通过 suset/set 来修改。
+        """
+
+        if isinstance(resource_path, str):
+            resource_path = resource_path.strip(Config.NODE_SEPARATOR)
+            if "*" in resource_path or "?" in resource_path or "[" in resource_path:
+                matched = self.glob_resources(resource_path)
+            else:
+                res = self.define(resource_path)
+                if acl_id is None:
+                    self._acl_counter += 1
+                    acl_id = f"acl_{subject.type.value.lower()}_{subject.id}_{res.id}_{self._acl_counter}"
+
+                acl = AclEntry(
+                    id=acl_id,
+                    subject_type=subject.type,
+                    subject_id=subject.id,
+                    resource_id=res.id,
+                    allow_mask=allow_mask,
+                    deny_mask=deny_mask,
+                )
+                self.add_acl(acl)
+                return
+        elif isinstance(resource_path, Pattern):
+            matched = self.match_resources(lambda t: bool(resource_path.fullmatch(t)))
+        else:
+            matched = self.match_resources(resource_path)
+
+        for res in matched:
+            if self.get_primary_acl(subject, res.id):
+                continue
+            self._acl_counter += 1
+            acl_id = f"acl_{subject.type.value.lower()}_{subject.id}_{res.id}_{self._acl_counter}"
+            acl = AclEntry(
+                id=acl_id,
+                subject_type=subject.type,
+                subject_id=subject.id,
+                resource_id=res.id,
+                allow_mask=allow_mask,
+                deny_mask=deny_mask,
+            )
+            self.add_acl(acl)
 
     def depend(
         self,
-        target_acl: AclEntry,
+        target_subject: User | Role,
+        target_resource_id: str,
         dep_subject: User | Role,
         dep_resource_path: str,
         required_mask: int,
     ) -> AclEntry:
-        dep_subject_id = dep_subject.id
-        dep_subject_type = SubjectType.USER if isinstance(dep_subject, User) else SubjectType.ROLE
+        target_acl = self.get_primary_acl(target_subject, target_resource_id)
+        if not target_acl:
+            raise ValueError("Target ACL does not exist.")
         dep_res = self.define(dep_resource_path)
         dep = AclDependency(
-            subject_type=dep_subject_type,
-            subject_id=dep_subject_id,
+            subject_type=dep_subject.type,
+            subject_id=dep_subject.id,
             resource_id=dep_res.id,
             required_mask=required_mask,
         )
@@ -166,6 +228,16 @@ class BaseStore:
             raise ValueError("Inherit relationship must be between User-User, User-Role, or Role-Role.")
 
     # ---- User / Role ----
+    def create_user(self, uid: str, name: str) -> User:
+        user = User(id=uid, name=name)
+        self.users[user.id] = user
+        return user
+
+    def create_role(self, rid: str, name: str) -> Role:
+        role = Role(id=rid, name=name)
+        self.roles[role.id] = role
+        return role
+
     def add_user(self, user: User):
         self.users[user.id] = user
         return user
@@ -185,14 +257,31 @@ class BaseStore:
         self.acls.append(acl)
 
     def get_acl(self, subject: User | Role, resource_id: str) -> list[AclEntry]:
-        subject_id = subject.id
-        subject_type = SubjectType.USER if isinstance(subject, User) else SubjectType.ROLE
         return [
             acl for acl in self.acls
-            if acl.subject_type == subject_type and
-               acl.subject_id == subject_id and
+            if acl.subject_type == subject.type and
+               acl.subject_id == subject.id and
                acl.resource_id == resource_id
         ]
+
+    def get_primary_acl(
+        self,
+        subject: User | Role,
+        resource_id: str,
+    ) -> AclEntry | None:
+        """
+        返回第一个匹配 subject+resource 的 ACL，视为主 ACL。
+        若不存在则返回 None。
+        """
+        return next(
+            (
+                acl for acl in self.acls
+                if acl.subject_type == subject.type
+                and acl.subject_id == subject.id
+                and acl.resource_id == resource_id
+            ),
+            None,
+        )
 
     def iter_acls_for_resource(self, resource_id: str) -> Iterable[AclEntry]:
         return (acl for acl in self.acls if acl.resource_id == resource_id)

@@ -6,5 +6,6 @@ from .model import User as User
 from .model import Role as Role
 from .model import ResourceNode as ResourceNode
 from .model import Permission as Permission
+from .model import InheritMode as InheritMode
 
 PE = PermissionExecutor
