@@ -68,7 +68,7 @@ class BaseStore:
     def define(
         self,
         path: str,
-        inherit_mode: InheritMode = InheritMode.MERGE,
+        inherit_mode: InheritMode | None = None,
         type_: str = "GENERIC",
     ) -> ResourceNode:
         parts = [p for p in path.strip(Config.NODE_SEPARATOR).split(Config.NODE_SEPARATOR) if p]
@@ -85,11 +85,20 @@ class BaseStore:
                     id=current_id,
                     name=part,
                     parent_id=current_parent_id,
-                    inherit_mode=inherit_mode if is_last else InheritMode.MERGE,
+                    inherit_mode=(InheritMode.OVERRIDE if inherit_mode is None else inherit_mode) if is_last else InheritMode.MERGE,
                     type=type_ if is_last else "DIR",
                 )
+            elif is_last:
+                # 已存在，更新属性
+                if inherit_mode is not None:
+                    self.resources[current_id].inherit_mode = inherit_mode
+                self.resources[current_id].type = type_
+            else:
+                # 作为中间节点，确保类型为 DIR，继承模式为 MERGE
+                self.resources[current_id].inherit_mode = InheritMode.MERGE
+                self.resources[current_id].type = "DIR"
             current_parent_id = current_id
-            
+
         return self.resources[current_parent_id]  # type: ignore
 
     def glob_resources(self, pattern: str) -> list[ResourceNode]:
@@ -285,3 +294,35 @@ class BaseStore:
 
     def iter_acls_for_resource(self, resource_id: str) -> Iterable[AclEntry]:
         return (acl for acl in self.acls if acl.resource_id == resource_id)
+
+    def resource_tree(self) -> str:
+        lines = ["/"]
+
+        def _format_node(node: ResourceNode, prefix: str, is_last: bool):
+            lines.append(f"{prefix}{'└── ' if is_last else '├── '}{node.name} (type={node.type}, inherit_mode={node.inherit_mode})")
+            children = [n for n in self.resources.values() if n.parent_id == node.id]
+            for i, child in enumerate(children):
+                _format_node(child, prefix + ("    " if is_last else "│   "), i == len(children) - 1)
+        roots = [n for n in self.resources.values() if n.parent_id is None]
+        for i, root in enumerate(roots):
+            _format_node(root, "", i == len(roots) - 1)
+        return "\n".join(lines)
+
+    def permission_on(self, subject: User | Role):
+        lines = ["/"]
+
+        def _format_node(node: ResourceNode, prefix: str, is_last: bool):
+            acl = self.get_primary_acl(subject, node.id)
+            if acl:
+                perm_str = f" allow={acl.allow_mask}, deny={acl.deny_mask}"
+            else:
+                perm_str = " no ACL"
+            lines.append(f"{prefix}{'└── ' if is_last else '├── '}{node.name} (type={node.type}, inherit_mode={node.inherit_mode},{perm_str})")
+            children = [n for n in self.resources.values() if n.parent_id == node.id]
+            for i, child in enumerate(children):
+                _format_node(child, prefix + ("    " if is_last else "│   "), i == len(children) - 1)
+
+        roots = [n for n in self.resources.values() if n.parent_id is None]
+        for i, root in enumerate(roots):
+            _format_node(root, "", i == len(roots) - 1)
+        return "\n".join(lines)

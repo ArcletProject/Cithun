@@ -41,24 +41,20 @@ def bob():
     return "bob"
 
 
-# ROOT.set(user, "foo.bar.baz.*", NodeState("vma"))
-monitor.suset(user, "foo.bar.baz", Permission.VISIT | Permission.AVAILABLE)
-monitor.suset(user, "foo.bar.baz.qux", Permission.VISIT | Permission.AVAILABLE)
-assert alice(user) == "alice"
-assert bob(user) == "bob"  # target node's parent is available
-
-
 @require("foo.bar.qux")
 def caven():
     return "caven"
 
 
-# @require("foo.bar.baz.quux")
-# def dale():
-#     return "dale"
-#
-#
-# assert dale(user) == "dale"  # target node defined after the wildcard set is also available
+@require("foo.bar.baz.quux")
+def dale():
+    return "dale"
+
+
+monitor.suset(user, "foo.bar.*", Permission(7))
+assert alice(user) == "alice"
+assert bob(user) == "bob"  # target node's parent is available
+assert dale(user) == "dale"
 
 try:
     caven(user)
@@ -68,6 +64,14 @@ except PermissionError as e:
 
 monitor.suset(user, "foo.bar.qux", Permission.VISIT | Permission.AVAILABLE | Permission.MODIFY)
 assert caven(user) == "caven"  # caven as target node is available
+
+monitor.suset(user, "foo.bar.baz.quux", Permission.VISIT)
+
+try:
+    dale(user)
+except PermissionError as e:
+    # raise PermissionError as dale's target node is dependent on the unavailable node
+    assert str(e) == "Permission denied for cithun to access foo.bar.baz.quux"
 
 monitor.depend(
     user, "foo.bar.qux",
@@ -80,3 +84,6 @@ try:
 except PermissionError as e:
     # raise PermissionError as caven's target node is dependent on the unavailable node
     assert str(e) == "Permission denied for user:cithun to access foo.bar.qux"
+
+print(monitor.resource_tree())
+print(monitor.permission_on(user))

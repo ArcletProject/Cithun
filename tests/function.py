@@ -4,8 +4,8 @@ from arclet.cithun import Permission, User, Role, InheritMode
 from arclet.cithun.builtins import System
 
 monitor = System(Path("function_monitor.json"))
-
-monitor.define("foo.bar.baz.qux", InheritMode.OVERRIDE)
+monitor.define("foo.bar.baz")
+monitor.define("foo.bar.baz.qux")
 monitor.define("command.test.sub")
 monitor.define("command.test1.sub1")
 
@@ -17,8 +17,6 @@ monitor.define("command.test1.sub1")
 #     current_mask: int,
 #     permission_lookup
 # ):
-    
-    
 
 # @monitor.attach(lambda pat: pat.startswith("auth."))
 # def auth_handler(node: str, owner, state) -> bool:
@@ -54,3 +52,7 @@ with monitor.transaction():
     monitor.suset(user, "command.test", Permission(5))
     monitor.suset(user, "command.test.*", Permission(5))
     assert monitor.get(user, "command.test.sub") == Permission(5)
+
+
+print(monitor.resource_tree())
+print(monitor.permission_on(user))
