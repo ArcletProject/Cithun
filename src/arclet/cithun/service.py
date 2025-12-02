@@ -21,6 +21,15 @@ class DependencyCycleError(RuntimeError):
 
 
 def expand_roles(role_ids: list[str], roles: dict[str, Role]) -> set[str]:
+    """递归展开角色列表，获取所有继承的角色 ID。
+
+    Args:
+        role_ids (list[str]): 初始角色 ID 列表。
+        roles (dict[str, Role]): 角色字典，用于查找角色信息。
+
+    Returns:
+        set[str]: 包含所有继承角色的 ID 集合。
+    """
     result: set[str] = set()
     visited: set[str] = set()
 
@@ -28,10 +37,13 @@ def expand_roles(role_ids: list[str], roles: dict[str, Role]) -> set[str]:
         if rid in visited:
             return
         visited.add(rid)
-        if rid not in roles:
+        
+        role = roles.get(rid)
+        if not role:
             return
+            
         result.add(rid)
-        for pr in roles[rid].parent_role_ids:
+        for pr in role.parent_role_ids:
             dfs(pr)
 
     for rid in role_ids:
@@ -50,15 +62,30 @@ class PermissionService(Generic[Unpack[Ts]]):
         resource_id: str,
         context: tuple[Unpack[Ts]] | None = None,
     ) -> int:
+        """计算用户在指定资源上的有效权限。
+
+        Args:
+            user (str | User): 用户 ID 或用户对象。
+            resource_id (str): 资源 ID。
+            context (tuple[Unpack[Ts]] | None, optional): 上下文信息。默认为 None。
+
+        Returns:
+            int: 有效权限掩码。
+        """
         context = context or tuple()
         resource = self.storage.get_resource(resource_id)
         user_id = user.id if isinstance(user, User) else user
-        cache : dict[tuple[str, str, str], int] = {}
+        cache: dict[tuple[str, str, str], int] = {}
 
         def permission_lookup(subject: User | Role, *ctx: Unpack[Ts]) -> int:
             subject_type = SubjectType.USER if isinstance(subject, User) else SubjectType.ROLE
-            return self._calc_permissions_for_subject(subject_type, subject.id, resource, ctx, visited=[], cache=cache)
-        base_mask = self._calc_permissions_for_subject(SubjectType.USER, user_id, resource, context, visited=[], cache=cache)
+            return self._calc_permissions_for_subject(
+                subject_type, subject.id, resource, ctx, visited=[], cache=cache
+            )
+
+        base_mask = self._calc_permissions_for_subject(
+            SubjectType.USER, user_id, resource, context, visited=[], cache=cache
+        )
 
         return self.engine.apply_strategies(
             self.storage.get_user(user_id),
@@ -75,6 +102,17 @@ class PermissionService(Generic[Unpack[Ts]]):
         required_mask: int,
         context: tuple[Unpack[Ts]] | None = None,
     ) -> bool:
+        """检查用户是否拥有指定资源的特定权限。
+
+        Args:
+            user (str | User): 用户 ID 或用户对象。
+            resource_id (str): 资源 ID。
+            required_mask (int): 需要的权限掩码。
+            context (tuple[Unpack[Ts]] | None, optional): 上下文信息。默认为 None。
+
+        Returns:
+            bool: 如果拥有所有请求的权限则返回 True，否则返回 False。
+        """
         eff = self.get_effective_permissions(user, resource_id, context)
         return (eff & required_mask) == required_mask
 

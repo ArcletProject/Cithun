@@ -37,16 +37,22 @@ class PermissionExecutor:
         self.storage = storage
         self.perm_service = perm_service
 
-    # ---------- 工具方法 ----------
-
     def _get_parent_and_self(
         self,
         resource_path: str,
         missing_ok: bool,
     ) -> tuple[ResourceNode | None, ResourceNode | None]:
-        """
-        返回 (parent_node, self_node)，其中任意一个可能为 None（若不存在）。
-        如果 missing_ok=False 时，按规则抛出 PermissionNotFoundError。
+        """获取父节点和当前节点。
+
+        Args:
+            resource_path (str): 资源路径。
+            missing_ok (bool): 是否允许节点不存在。
+
+        Returns:
+            tuple[ResourceNode | None, ResourceNode | None]: (parent_node, self_node)。
+
+        Raises:
+            PermissionNotFoundError: 当 missing_ok=False 且节点不存在时抛出。
         """
         path = resource_path.strip(Config.NODE_SEPARATOR)
         if not path:
@@ -58,15 +64,16 @@ class PermissionExecutor:
 
         # 获取 self
         self_node = self.storage.resources.get(path)
+        
         # 获取 parent
+        parent_id = None
         if Config.NODE_SEPARATOR in path:
-            parent_id = path.rsplit(Config.NODE_SEPARATOR, 1)[0]
-        else:
-            parent_id = None
+            parent_id, _, _ = path.rpartition(Config.NODE_SEPARATOR)
+        
         parent_node = self.storage.resources.get(parent_id) if parent_id else None
 
         # 父节点不存在
-        if parent_node is None and parent_id is not None and not missing_ok:
+        if parent_node is None and parent_id and not missing_ok:
             raise PermissionNotFoundError(f"Parent resource '{parent_id}' not found")
 
         # 自身不存在
@@ -80,10 +87,17 @@ class PermissionExecutor:
         resource_path: str,
         missing_ok: bool,
     ) -> tuple[ResourceNode | None, ResourceNode]:
-        """
-        set/suset 时使用：
-        - 若自身不存在且 missing_ok=False：抛异常
-        - 若自身不存在且 missing_ok=True：允许自动创建（通过 define）
+        """确保资源存在以进行设置操作。
+
+        Args:
+            resource_path (str): 资源路径。
+            missing_ok (bool): 是否允许自动创建。
+
+        Returns:
+            tuple[ResourceNode | None, ResourceNode]: (parent_node, self_node)。
+
+        Raises:
+            PermissionNotFoundError: 当 missing_ok=False 且资源不存在时抛出。
         """
         parent, node = self._get_parent_and_self(resource_path, missing_ok=missing_ok)
         if node is None:
@@ -99,11 +113,21 @@ class PermissionExecutor:
         mask: int,
         mode: str,
     ) -> int:
-        """
-        chmod 风格权限调整：
-        - mode="=" : 覆盖为 mask
-        - mode="+" : old_mask | mask
-        - mode="-" : old_mask & ~mask
+        """应用 chmod 风格的权限调整。
+
+        Args:
+            old_mask (int): 旧的权限掩码。
+            mask (int): 新的权限掩码。
+            mode (str): 调整模式。
+                "=" : 覆盖为 mask
+                "+" : old_mask | mask
+                "-" : old_mask & ~mask
+
+        Returns:
+            int: 调整后的权限掩码。
+
+        Raises:
+            ValueError: 当 mode 不支持时抛出。
         """
         if mode == "=":
             return mask
@@ -114,8 +138,6 @@ class PermissionExecutor:
         else:
             raise ValueError(f"Unsupported chmod mode: {mode!r}")
 
-    # ---------- suget：root 获取执行者在某节点的权限状态 ----------
-
     def suget(
         self,
         subject: User | Role,
@@ -123,12 +145,19 @@ class PermissionExecutor:
         missing_ok: bool = False,
         context: tuple | None = None,
     ) -> int | None:
-        """
-        root 获取 subject 在指定节点上的权限状态（bitmask），不做权限校验。
+        """root 获取 subject 在指定节点上的权限状态（bitmask），不做权限校验。
 
-        规则：
-          1. 若父节点不存在 -> missing_ok=False: 抛异常；missing_ok=True: 返回 None
-          2. 若自身不存在   -> missing_ok=False: 抛异常；missing_ok=True: 返回 None
+        Args:
+            subject (User | Role): 目标主体（用户或角色）。
+            resource_path (str): 资源路径。
+            missing_ok (bool, optional): 是否允许节点不存在。默认为 False。
+            context (tuple | None, optional): 上下文信息。默认为 None。
+
+        Returns:
+            int | None: 权限掩码。如果 missing_ok=True 且节点不存在，返回 None。
+
+        Raises:
+            PermissionNotFoundError: 当 missing_ok=False 且节点不存在时抛出。
         """
         parent, node = self._get_parent_and_self(resource_path, missing_ok=missing_ok)
         # 若 missing_ok=True，则 parent 或 node 可能为 None，此时按规则返回 None
@@ -157,12 +186,20 @@ class PermissionExecutor:
         missing_ok: bool = False,
         context: tuple | None = None,
     ) -> bool:
-        """
-        root 测试 subject 在指定节点上是否拥有某些权限，不做权限校验。
+        """root 测试 subject 在指定节点上是否拥有某些权限，不做权限校验。
 
-        规则：
-          1. 若父节点不存在 -> missing_ok=False: 抛异常；missing_ok=True: 返回 False
-          2. 若自身不存在   -> missing_ok=False: 抛异常；missing_ok=True: 返回 False
+        Args:
+            subject (User | Role): 目标主体（用户或角色）。
+            resource_path (str): 资源路径。
+            required_mask (int): 需要的权限掩码。
+            missing_ok (bool, optional): 是否允许节点不存在。默认为 False。
+            context (tuple | None, optional): 上下文信息。默认为 None。
+
+        Returns:
+            bool: 是否拥有指定权限。如果 missing_ok=True 且节点不存在，返回 False。
+
+        Raises:
+            PermissionNotFoundError: 当 missing_ok=False 且节点不存在时抛出。
         """
         mask = self.suget(
             subject,
@@ -181,14 +218,20 @@ class PermissionExecutor:
         missing_ok: bool = False,
         context: tuple | None = None,
     ) -> int | None:
-        """
-        执行者获取自己在目标节点的权限状态。
+        """执行者获取自己在目标节点的权限状态。
 
-        规则：
-          1. 若父节点不存在 -> missing_ok=False: 抛异常；missing_ok=True: 返回 None
-          2. 执行者在父节点的权限不包含 v+a -> 抛 PermissionDeniedError
-          3. 若自身不存在 -> missing_ok=False: 抛异常；missing_ok=True: 返回 None
-          4. 执行者在自身的权限不包含 v -> 抛 PermissionDeniedError；否则返回权限状态
+        Args:
+            executor (User): 执行者。
+            resource_path (str): 资源路径。
+            missing_ok (bool, optional): 是否允许节点不存在。默认为 False。
+            context (tuple | None, optional): 上下文信息。默认为 None。
+
+        Returns:
+            int | None: 权限掩码。如果 missing_ok=True 且节点不存在，返回 None。
+
+        Raises:
+            PermissionNotFoundError: 当 missing_ok=False 且节点不存在时抛出。
+            PermissionDeniedError: 当执行者在父节点缺少 VISIT+AVAILABLE 权限，或在自身缺少 VISIT 权限时抛出。
         """
         parent, node = self._get_parent_and_self(resource_path, missing_ok=missing_ok)
         context = context or ()
@@ -226,20 +269,18 @@ class PermissionExecutor:
         mode: str = "=",
         missing_ok: bool = False,
     ) -> None:
-        """
-        root 为 subject 在指定节点上“设置权限状态”。
+        """root 为 subject 在指定节点上“设置权限状态”。
 
-        这里示例实现为：
-        - 先删除该 subject 在该 resource 上的旧 ACL（若你要支持多条 ACL，可改为添加一条新的而不删除旧的）
-        - 再创建一条 allow_mask=new_mask 的 ACL
+        Args:
+            subject (User | Role): 目标主体（用户或角色）。
+            resource_path (str | Callable[[str], bool] | Pattern[str]): 资源路径或匹配模式。
+            mask (int): 权限掩码。
+            mode (str, optional): 设置模式 ("=", "+", "-")。默认为 "="。
+            missing_ok (bool, optional): 是否允许节点不存在。默认为 False。
 
-        规则：
-          1. 若父节点不存在 -> missing_ok=False: 抛异常
-          2. 若自身不存在 -> missing_ok=False: 抛异常；missing_ok=True: 可自动创建节点
-          3. mode 支持 "=", "+", "-" 三种风格
-            - "=" : 直接覆盖为 mask
-            - "+" : 在旧权限基础上增加 mask
-            - "-" : 在旧权限基础上删除 mask
+        Raises:
+            PermissionNotFoundError: 当 missing_ok=False 且节点不存在时抛出。
+            ValueError: 当 mode 不支持时抛出。
         """
 
         if isinstance(resource_path, str):
@@ -297,18 +338,21 @@ class PermissionExecutor:
         missing_ok: bool = False,
         context: tuple | None = None,
     ) -> None:
-        """
-        执行者为目标 subject 设置目标节点的权限状态。
+        """执行者为目标 subject 设置目标节点的权限状态。
 
-        规则：
-          1. 若父节点不存在 -> missing_ok=False: 抛异常
-          2. 执行者在父节点权限不包含 v+m+a -> 抛 PermissionDeniedError
-          3. 若自身不存在 -> missing_ok=False: 抛异常；missing_ok=True: 可自动创建节点
-          4. 执行者在自身的权限不包含 m -> 不修改该节点状态（静默返回）
-          5. mode 支持 "=", "+", "-" 三种风格
-            - "=" : 直接覆盖为 mask
-            - "+" : 在旧权限基础上增加 mask
-            - "-" : 在旧权限基础上删除 mask
+        Args:
+            executor (User): 执行者。
+            target (User | Role): 目标主体（用户或角色）。
+            resource_path (str | Callable[[str], bool] | Pattern[str]): 资源路径或匹配模式。
+            mask (int): 权限掩码。
+            mode (str, optional): 设置模式 ("=", "+", "-")。默认为 "="。
+            missing_ok (bool, optional): 是否允许节点不存在。默认为 False。
+            context (tuple | None, optional): 上下文信息。默认为 None。
+
+        Raises:
+            PermissionNotFoundError: 当 missing_ok=False 且节点不存在时抛出。
+            PermissionDeniedError: 当执行者权限不足时抛出。
+            ValueError: 当 mode 不支持时抛出。
         """
         context = context or ()
 
