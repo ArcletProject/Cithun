@@ -91,7 +91,7 @@ storage = InMemoryStorage()
 from arclet.cithun import Permission
 from arclet.cithun.builtins import System
 
-system = System()
+system = System("data.json")
 
 with system.transaction():
     AUTH_1 = system.create_role("ROLE_AUTH_1", "AUTH_1")
@@ -99,23 +99,26 @@ with system.transaction():
     AUTH_3 = system.create_role("ROLE_AUTH_3", "AUTH_3")
     AUTH_4 = system.create_role("ROLE_AUTH_4", "AUTH_4")
     AUTH_5 = system.create_role("ROLE_AUTH_5", "AUTH_5")
-    system.inherit_role(AUTH_2, AUTH_1)
-    system.inherit_role(AUTH_3, AUTH_2)
-    system.inherit_role(AUTH_4, AUTH_3)
-    system.inherit_role(AUTH_5, AUTH_4)
-    alice = system.create_user("alice", "Alice", role_ids=[AUTH_1.id])
-    bob = system.create_user("bob", "Bob", role_ids=[AUTH_3.id])
-    carol = system.create_user("carol", "Carol", role_ids=[AUTH_5.id])
+    system.inherit(AUTH_2, AUTH_1)
+    system.inherit(AUTH_3, AUTH_2)
+    system.inherit(AUTH_4, AUTH_3)
+    system.inherit(AUTH_5, AUTH_4)
+    alice = system.create_user("alice", "Alice")
+    bob = system.create_user("bob", "Bob")
+    carol = system.create_user("carol", "Carol")
+    system.inherit(alice, AUTH_1)
+    system.inherit(bob, AUTH_3)
+    system.inherit(carol, AUTH_5)
 
     system.assign(AUTH_1, "app", Permission.AVAILABLE)
     system.assign(AUTH_3, "app", Permission.VISIT)
-    system.assign(AUTH_5, "app/data", Permission.AVAILABLE | Permission.VISIT | Permission.MODIFY)
+    system.assign(AUTH_5, "app.data", Permission.AVAILABLE | Permission.VISIT | Permission.MODIFY)
 
-    system.assign(AUTH_4, "app/secret", Permission.AVAILABLE | Permission.VISIT)
-    system.assign(alice, "app/data", Permission.MODIFY)
-    system.assign(bob, "app/config", Permission.MODIFY)
+    system.assign(AUTH_4, "app.secret", Permission.AVAILABLE | Permission.VISIT)
+    system.assign(alice, "app.data", Permission.MODIFY)
+    system.assign(bob, "app.config", Permission.MODIFY)
 
-    system.depend(alice, "app/data", AUTH_4, "app/secret", Permission.VISIT)
-    system.depend(bob, "app/config", alice, "app/data",Permission.VISIT)
+    system.depend(alice, "app.data", AUTH_4, "app.secret", Permission.VISIT)
+    system.depend(bob, "app.config", alice, "app.data",Permission.VISIT)
 
 ```

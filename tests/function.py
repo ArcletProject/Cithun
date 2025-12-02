@@ -1,9 +1,9 @@
 from pathlib import Path
 
-from arclet.cithun import Permission, User, Role, InheritMode
+from arclet.cithun import Permission
 from arclet.cithun.builtins import System
 
-monitor = System(Path("function_monitor.json"))
+monitor = System("./function_monitor.json")
 monitor.define("foo.bar.baz")
 monitor.define("foo.bar.baz.qux")
 monitor.define("command.test.sub")
@@ -29,10 +29,10 @@ monitor.define("command.test1.sub1")
 
 
 with monitor.transaction():
-    admin = monitor.add_role(Role("role:admin", "Administrator"))
+    admin = monitor.create_role("role:admin", "Administrator")
     monitor.suset(admin, "foo.bar.baz", Permission.VISIT | Permission.AVAILABLE | Permission.MODIFY)
 
-    user = monitor.add_user(User("user:cithun", "cithun"))
+    user = monitor.create_user("user:cithun", "cithun")
     monitor.inherit(user, admin)
 
     # monitor.run_attach(user, NodeState("vma"), {})

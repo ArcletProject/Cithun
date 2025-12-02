@@ -3,15 +3,15 @@ from pathlib import Path
 from typing import Callable, TypeVar
 from typing_extensions import Concatenate, ParamSpec
 
-from arclet.cithun import User, Role, Permission
+from arclet.cithun import User, Permission
 from arclet.cithun.builtins import System
 
-monitor = System(Path("check_monitor.json"))
+monitor = System("check_monitor.json")
 
 T = TypeVar("T")
 P = ParamSpec("P")
 
-user = monitor.add_user(User("user:cithun", "cithun"))
+user = monitor.create_user("user:cithun", "cithun")
 
 
 def require(

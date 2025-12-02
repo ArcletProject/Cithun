@@ -31,6 +31,7 @@ class SubjectType(str, Enum):
     USER = "USER"
     ROLE = "ROLE"
 
+
 @dataclass
 class Role:
     id: str
@@ -38,6 +39,7 @@ class Role:
     parent_role_ids: list[str] = field(default_factory=list)
 
     type: ClassVar[SubjectType] = SubjectType.ROLE
+
 
 @dataclass
 class User:
@@ -58,9 +60,9 @@ class AclDependency:
     resource_id: str
     required_mask: int
 
+
 @dataclass
 class AclEntry:
-    id: str
     subject_type: SubjectType
     subject_id: str
     resource_id: str
@@ -70,7 +72,30 @@ class AclEntry:
 
     def __repr__(self):
         return (
-            f"AclEntry(id={self.id}, subject={self.subject_type.value}:{self.subject_id}, "
+            f"AclEntry(subject={self.subject_type.value}:{self.subject_id}, "
             f"resource={self.resource_id}, allow={Permission(self.allow_mask)!r}, "
             f"deps={self.dependencies})"
         )
+
+
+@dataclass
+class TrackLevel:
+    """
+    Track 中的一个“等级节点”：
+    - 对应一个 Role
+    - 有一个顺序 level_index（0,1,2,...，index 越大代表等级越高）
+    """
+    role_id: str
+    level_name: str  # 例如：MEMBER, ADMIN, OWNER
+    level_index: int   # 例如：AUTH_1=0, AUTH_2=1, ... AUTH_5=4
+
+
+@dataclass
+class Track:
+    """
+    一条“轨道”，管理一组有序角色：
+    比如：AUTH_1 ~ AUTH_5。
+    """
+    id: str
+    name: str
+    levels: list[TrackLevel] = field(default_factory=list)

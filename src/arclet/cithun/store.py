@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from itertools import zip_longest
 from collections.abc import Callable
 from re import Pattern
 from typing import Iterable
@@ -11,7 +12,7 @@ from .model import (
     InheritMode,
     ResourceNode,
     Role,
-    User,
+    User, Track, TrackLevel,
 )
 from .config import Config
 
@@ -22,11 +23,11 @@ class BaseStore:
     """
 
     def __init__(self):
-        self._acl_counter = 0
         self.resources: dict[str, ResourceNode] = {}
         self.users: dict[str, User] = {}
         self.roles: dict[str, Role] = {}
         self.acls: list[AclEntry] = []
+        self.tracks: dict[str, Track] = {}
 
     # ---- Resource ----
 
@@ -129,7 +130,6 @@ class BaseStore:
         resource_path: str | Callable[[str], bool] | Pattern[str],
         allow_mask: int,
         deny_mask: int = 0,
-        acl_id: str | None = None,
     ) -> None:
         """
         为指定 subject 在资源上分配 ACL。
@@ -148,19 +148,14 @@ class BaseStore:
                 matched = self.glob_resources(resource_path)
             else:
                 res = self.define(resource_path)
-                if acl_id is None:
-                    self._acl_counter += 1
-                    acl_id = f"acl_{subject.type.value.lower()}_{subject.id}_{res.id}_{self._acl_counter}"
-
                 acl = AclEntry(
-                    id=acl_id,
                     subject_type=subject.type,
                     subject_id=subject.id,
                     resource_id=res.id,
                     allow_mask=allow_mask,
                     deny_mask=deny_mask,
                 )
-                self.add_acl(acl)
+                self._add_acl(acl)
                 return
         elif isinstance(resource_path, Pattern):
             matched = self.match_resources(lambda t: bool(resource_path.fullmatch(t)))
@@ -170,17 +165,14 @@ class BaseStore:
         for res in matched:
             if self.get_primary_acl(subject, res.id):
                 continue
-            self._acl_counter += 1
-            acl_id = f"acl_{subject.type.value.lower()}_{subject.id}_{res.id}_{self._acl_counter}"
             acl = AclEntry(
-                id=acl_id,
                 subject_type=subject.type,
                 subject_id=subject.id,
                 resource_id=res.id,
                 allow_mask=allow_mask,
                 deny_mask=deny_mask,
             )
-            self.add_acl(acl)
+            self._add_acl(acl)
 
     def depend(
         self,
@@ -206,13 +198,13 @@ class BaseStore:
     def _ensure_user(self, user: User) -> User:
         if user.id in self.users:
             return user
-        self.add_user(user)
+        self.users[user.id] = user
         return user
 
     def _ensure_role(self, role: Role) -> Role:
         if role.id in self.roles:
             return role
-        self.add_role(role)
+        self.roles[role.id] = role
         return role
 
     def inherit(self, child: User | Role, parent: User | Role):
@@ -247,14 +239,6 @@ class BaseStore:
         self.roles[role.id] = role
         return role
 
-    def add_user(self, user: User):
-        self.users[user.id] = user
-        return user
-
-    def add_role(self, role: Role):
-        self.roles[role.id] = role
-        return role
-
     def get_user(self, uid: str) -> User:
         return self.users[uid]
 
@@ -262,7 +246,7 @@ class BaseStore:
         return self.roles[rid]
 
     # ---- ACL ----
-    def add_acl(self, acl: AclEntry):
+    def _add_acl(self, acl: AclEntry):
         self.acls.append(acl)
 
     def get_acl(self, subject: User | Role, resource_id: str) -> list[AclEntry]:
@@ -294,6 +278,127 @@ class BaseStore:
 
     def iter_acls_for_resource(self, resource_id: str) -> Iterable[AclEntry]:
         return (acl for acl in self.acls if acl.resource_id == resource_id)
+
+    def create_track(self, tid: str, name: str | None = None) -> Track:
+        if tid in self.tracks:
+            return self.tracks[tid]
+        track = Track(id=tid, name=name or tid)
+        self.tracks[track.id] = track
+        return track
+
+    def add_track(self, track: Track):
+        self.tracks[track.id] = track
+
+    def get_track(self, tid: str) -> Track:
+        return self.tracks[tid]
+
+    def add_track_level(self, track: Track, role: Role, name: str | None = None) -> None:
+        level_index = len(track.levels)
+        track.levels.append(
+            TrackLevel(
+                role_id=role.id,
+                level_index=level_index,
+                level_name=name or role.name,
+            )
+        )
+
+    def extend_track(self, track: Track, roles: Iterable[Role], names: Iterable[str] | None = None) -> None:
+        level_index = len(track.levels)
+        for (role, name) in zip_longest(roles, names or []):
+            track.levels.append(
+                TrackLevel(
+                    role_id=role.id,
+                    level_index=level_index,
+                    level_name=name or role.name,
+                )
+            )
+            level_index += 1
+
+    def insert_track_level(self, track: Track, index: int, role: Role, name: str | None = None) -> None:
+        track.levels.insert(
+            index,
+            TrackLevel(
+                role_id=role.id,
+                level_index=index,
+                level_name=name or role.name,
+            )
+        )
+        # 更新后续 level_index
+        for i in range(index + 1, len(track.levels)):
+            track.levels[i].level_index = i
+
+    def get_track_levels(self, track: Track) -> list[TrackLevel]:
+        return sorted(track.levels, key=lambda l: l.level_index)
+
+    def set_user_track_level(self, user: User, track: Track, level_index: int) -> None:
+        """
+        把用户在某个 track 上设置到指定等级：
+        - 清理该 track 上所有 role
+        - 然后为用户挂上“该 track 此 level 对应的 role”
+        """
+        levels = self.get_track_levels(track)
+        if not levels:
+            raise ValueError("Track has no levels.")
+        if level_index < 0 or level_index >= len(levels):
+            raise ValueError("Invalid level index.")
+        track_role_ids = {level.role_id for level in levels}
+        user.role_ids = [rid for rid in user.role_ids if rid not in track_role_ids]
+        if levels[level_index].role_id not in user.role_ids:
+            user.role_ids.append(levels[level_index].role_id)
+
+    def promote_track(self, user: User, track: Track, step: int = 1):
+        """
+        用户在某个 track 上升级 step 级：
+        - 当前没有该 track 角色 -> 为用户挂上最低 level 角色
+        - 升级超过最高 level -> 停在最高 level
+        返回最终的 level_index（或 None 表示 track 没定义）
+        """
+        levels = self.get_track_levels(track)
+        if not levels:
+            return
+        current_level_index = -1
+        for level in levels:
+            if level.role_id in user.role_ids:
+                current_level_index = level.level_index
+                break
+
+        if current_level_index == -1:
+            current_level_index = levels[0].level_index
+            self.set_user_track_level(user, track, current_level_index)
+            return current_level_index
+
+        all_indexes = sorted({level.level_index for level in levels})
+        idx_pos = all_indexes.index(current_level_index)
+        idx_pos = min(idx_pos + step, len(all_indexes) - 1)
+        new_level_index = all_indexes[idx_pos]
+        self.set_user_track_level(user, track, new_level_index)
+        return new_level_index
+
+    def demote_track(self, user: User, track: Track, step: int = 1):
+        """
+        用户在某个 track 上降级 step 级：
+        - 当前没有该 track 角色 -> 无视
+        - 降级超过最低 level -> 停在最低 level
+        返回最终的 level_index（或 None 表示 track 没定义）
+        """
+        levels = self.get_track_levels(track)
+        if not levels:
+            return
+        current_level_index = -1
+        for level in levels:
+            if level.role_id in user.role_ids:
+                current_level_index = level.level_index
+                break
+
+        if current_level_index == -1:
+            return
+
+        all_indexes = sorted({level.level_index for level in levels})
+        idx_pos = all_indexes.index(current_level_index)
+        idx_pos = max(idx_pos - step, 0)
+        new_level_index = all_indexes[idx_pos]
+        self.set_user_track_level(user, track, new_level_index)
+        return new_level_index
 
     def resource_tree(self) -> str:
         lines = ["/"]
