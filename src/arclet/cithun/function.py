@@ -3,19 +3,21 @@ from __future__ import annotations
 from collections.abc import Callable
 from re import Pattern
 
-from .store import BaseStore
-from .service import PermissionService
-from .model import Permission, ResourceNode, User, Role
 from .config import Config
+from .model import Permission, ResourceNode, Role, User
+from .service import PermissionService
+from .store import BaseStore
 
 
 class PermissionNotFoundError(KeyError):
     """资源不存在或父资源不存在时抛出。"""
+
     pass
 
 
 class PermissionDeniedError(PermissionError):
     """权限不足时抛出。"""
+
     pass
 
 
@@ -64,12 +66,12 @@ class PermissionExecutor:
 
         # 获取 self
         self_node = self.storage.resources.get(path)
-        
+
         # 获取 parent
         parent_id = None
         if Config.NODE_SEPARATOR in path:
             parent_id, _, _ = path.rpartition(Config.NODE_SEPARATOR)
-        
+
         parent_node = self.storage.resources.get(parent_id) if parent_id else None
 
         # 父节点不存在
@@ -177,7 +179,7 @@ class PermissionExecutor:
             cache=cache,
         )
         return mask
-    
+
     def test(
         self,
         subject: User | Role,
@@ -238,27 +240,19 @@ class PermissionExecutor:
 
         # 2. 检查执行者在父节点是否有 v+a（VISIT + AVAILABLE）
         if parent is not None:
-            parent_mask = self.perm_service.get_effective_permissions(
-                executor, parent.id, context
-            )
+            parent_mask = self.perm_service.get_effective_permissions(executor, parent.id, context)
             required_parent = Permission.VISIT | Permission.AVAILABLE
             if (parent_mask & required_parent) != required_parent:
-                raise PermissionDeniedError(
-                    f"Executor '{executor.id}' lacks VISIT+AVAILABLE on parent '{parent.id}'"
-                )
+                raise PermissionDeniedError(f"Executor '{executor.id}' lacks VISIT+AVAILABLE on parent '{parent.id}'")
 
         # 3. 自身不存在
         if node is None:
             return None
 
         # 4. 检查自身权限包含 VISIT
-        self_mask = self.perm_service.get_effective_permissions(
-            executor, node.id, context
-        )
+        self_mask = self.perm_service.get_effective_permissions(executor, node.id, context)
         if (self_mask & Permission.VISIT) != Permission.VISIT:
-            raise PermissionDeniedError(
-                f"Executor '{executor.id}' lacks VISIT on '{node.id}'"
-            )
+            raise PermissionDeniedError(f"Executor '{executor.id}' lacks VISIT on '{node.id}'")
         return self_mask
 
     def suset(
@@ -365,19 +359,13 @@ class PermissionExecutor:
 
                 # 2. 检查执行者在父节点是否有 v+m+a
                 if parent is not None:
-                    parent_mask = self.perm_service.get_effective_permissions(
-                        executor, parent.id, context
-                    )
+                    parent_mask = self.perm_service.get_effective_permissions(executor, parent.id, context)
                     required_parent = Permission.VISIT | Permission.MODIFY | Permission.AVAILABLE
                     if (parent_mask & required_parent) != required_parent:
-                        raise PermissionDeniedError(
-                            f"Executor '{executor.id}' lacks V+M+A on parent '{parent.id}'"
-                        )
+                        raise PermissionDeniedError(f"Executor '{executor.id}' lacks V+M+A on parent '{parent.id}'")
 
                 # 4. 检查执行者在自身是否有 MODIFY
-                self_mask = self.perm_service.get_effective_permissions(
-                    executor, node.id, context
-                )
+                self_mask = self.perm_service.get_effective_permissions(executor, node.id, context)
                 if (self_mask & Permission.MODIFY) != Permission.MODIFY:
                     # 不修改该节点状态
                     return
@@ -408,17 +396,11 @@ class PermissionExecutor:
                 else:
                     continue
             if parent is not None:
-                parent_mask = self.perm_service.get_effective_permissions(
-                    executor, parent.id, context
-                )
+                parent_mask = self.perm_service.get_effective_permissions(executor, parent.id, context)
                 required_parent = Permission.VISIT | Permission.MODIFY | Permission.AVAILABLE
                 if (parent_mask & required_parent) != required_parent:
-                    raise PermissionDeniedError(
-                        f"Executor '{executor.id}' lacks V+M+A on parent '{parent.id}'"
-                    )
-            self_mask = self.perm_service.get_effective_permissions(
-                executor, node.id, context
-            )
+                    raise PermissionDeniedError(f"Executor '{executor.id}' lacks V+M+A on parent '{parent.id}'")
+            self_mask = self.perm_service.get_effective_permissions(executor, node.id, context)
             if (self_mask & Permission.MODIFY) != Permission.MODIFY:
                 continue  # 无修改权限，跳过
 

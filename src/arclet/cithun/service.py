@@ -3,10 +3,9 @@ from __future__ import annotations
 from typing import Generic
 from typing_extensions import TypeVarTuple, Unpack
 
+from .model import AclEntry, InheritMode, ResourceNode, Role, SubjectType, User
 from .store import BaseStore
-from .model import InheritMode, User, Role, ResourceNode, SubjectType, AclEntry
 from .strategy import PermissionEngine
-
 
 Ts = TypeVarTuple("Ts")
 
@@ -14,9 +13,7 @@ Ts = TypeVarTuple("Ts")
 class DependencyCycleError(RuntimeError):
     def __init__(self, cycle_nodes: list[tuple[str, str, str]]):
         self.cycle_nodes = cycle_nodes
-        msg = "Dependency cycle detected: " + " -> ".join(
-            f"{t}:{sid}@{rid}" for (t, sid, rid) in cycle_nodes
-        )
+        msg = "Dependency cycle detected: " + " -> ".join(f"{t}:{sid}@{rid}" for (t, sid, rid) in cycle_nodes)
         super().__init__(msg)
 
 
@@ -37,11 +34,11 @@ def expand_roles(role_ids: list[str], roles: dict[str, Role]) -> set[str]:
         if rid in visited:
             return
         visited.add(rid)
-        
+
         role = roles.get(rid)
         if not role:
             return
-            
+
         result.add(rid)
         for pr in role.parent_role_ids:
             dfs(pr)
@@ -72,16 +69,14 @@ class PermissionService(Generic[Unpack[Ts]]):
         Returns:
             int: 有效权限掩码。
         """
-        context = context or tuple()
+        context = context or ()
         resource = self.storage.get_resource(resource_id)
         user_id = user.id if isinstance(user, User) else user
         cache: dict[tuple[str, str, str], int] = {}
 
         def permission_lookup(subject: User | Role, *ctx: Unpack[Ts]) -> int:
             subject_type = SubjectType.USER if isinstance(subject, User) else SubjectType.ROLE
-            return self._calc_permissions_for_subject(
-                subject_type, subject.id, resource, ctx, visited=[], cache=cache
-            )
+            return self._calc_permissions_for_subject(subject_type, subject.id, resource, ctx, visited=[], cache=cache)
 
         base_mask = self._calc_permissions_for_subject(
             SubjectType.USER, user_id, resource, context, visited=[], cache=cache
@@ -140,7 +135,7 @@ class PermissionService(Generic[Unpack[Ts]]):
 
         # Determine relevant subjects (self + inherited roles)
         relevant_subjects: set[tuple[SubjectType, str]] = set()
-        
+
         if subject_type == SubjectType.USER:
             user = self.storage.get_user(subject_id)
             relevant_subjects.add((SubjectType.USER, user.id))

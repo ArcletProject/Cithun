@@ -3,7 +3,7 @@ from pathlib import Path
 from typing import Callable, TypeVar
 from typing_extensions import Concatenate, ParamSpec
 
-from arclet.cithun import User, Permission
+from arclet.cithun import Permission, User
 from arclet.cithun.builtins import System
 
 monitor = System("check_monitor.json")
@@ -73,11 +73,7 @@ except PermissionError as e:
     # raise PermissionError as dale's target node is dependent on the unavailable node
     assert str(e) == "Permission denied for cithun to access foo.bar.baz.quux"
 
-monitor.depend(
-    user, "foo.bar.qux",
-    user, "foo.bar.baz.qux",
-    Permission.VISIT
-)
+monitor.depend(user, "foo.bar.qux", user, "foo.bar.baz.qux", Permission.VISIT)
 monitor.suset(user, "foo.bar.baz.qux", Permission.VISIT)
 try:
     caven(user)

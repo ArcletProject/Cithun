@@ -1,18 +1,18 @@
 from __future__ import annotations
 
 from collections.abc import Callable
-from typing import Protocol, Generic
+from typing import Generic, Protocol
 from typing_extensions import TypeVarTuple, Unpack
-
 
 Ts = TypeVarTuple("Ts")
 
 
-from .model import User, Role, ResourceNode
+from .model import ResourceNode, Role, User
 
 
 class PermissionStrategy(Protocol[Unpack[Ts]]):
     """权限策略协议。"""
+
     def __call__(
         self,
         user: User,
@@ -35,8 +35,10 @@ class PermissionStrategy(Protocol[Unpack[Ts]]):
         """
         ...
 
+
 class PermissionEngine(Generic[Unpack[Ts]]):
     """权限引擎，管理和应用权限策略。"""
+
     def __init__(self):
         self._strategies: list[PermissionStrategy[Unpack[Ts]]] = []
 

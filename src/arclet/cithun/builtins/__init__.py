@@ -1,4 +1,5 @@
 from contextlib import contextmanager
+
 from arclet.cithun import PermissionEngine, PermissionExecutor
 
 from .service import DefaultPermissionService

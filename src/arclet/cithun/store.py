@@ -1,20 +1,12 @@
 from __future__ import annotations
 
-from itertools import zip_longest
-from collections.abc import Callable
-from re import Pattern
-from typing import Iterable
 import fnmatch
+from collections.abc import Callable, Iterable
+from itertools import zip_longest
+from re import Pattern
 
-from .model import (
-    AclDependency,
-    AclEntry,
-    InheritMode,
-    ResourceNode,
-    Role,
-    User, Track, TrackLevel,
-)
 from .config import Config
+from .model import AclDependency, AclEntry, InheritMode, ResourceNode, Role, Track, TrackLevel, User
 
 
 class BaseStore:
@@ -91,8 +83,8 @@ class BaseStore:
 
         for i, part in enumerate(parts):
             current_id = f"{current_parent_id}{Config.NODE_SEPARATOR}{part}" if current_parent_id else part
-            is_last = (i == len(parts) - 1)
-            
+            is_last = i == len(parts) - 1
+
             node = self.resources.get(current_id)
             if not node:
                 node = ResourceNode(
@@ -239,7 +231,7 @@ class BaseStore:
         )
         target_acl.dependencies.append(dep)
         return target_acl
-    
+
     def _ensure_user(self, user: User) -> User:
         if user.id in self.users:
             return user
@@ -337,10 +329,9 @@ class BaseStore:
             list[AclEntry]: ACL 列表。
         """
         return [
-            acl for acl in self.acls
-            if acl.subject_type == subject.type and
-               acl.subject_id == subject.id and
-               acl.resource_id == resource_id
+            acl
+            for acl in self.acls
+            if acl.subject_type == subject.type and acl.subject_id == subject.id and acl.resource_id == resource_id
         ]
 
     def get_primary_acl(
@@ -359,10 +350,9 @@ class BaseStore:
         """
         return next(
             (
-                acl for acl in self.acls
-                if acl.subject_type == subject.type
-                and acl.subject_id == subject.id
-                and acl.resource_id == resource_id
+                acl
+                for acl in self.acls
+                if acl.subject_type == subject.type and acl.subject_id == subject.id and acl.resource_id == resource_id
             ),
             None,
         )
@@ -436,7 +426,7 @@ class BaseStore:
             roles (Iterable[Role]): 角色列表。
             names (Iterable[str] | None, optional): 等级名称列表。默认为 None。
         """
-        for (role, name) in zip_longest(roles, names or []):
+        for role, name in zip_longest(roles, names or []):
             self.add_track_level(track, role, name)
 
     def insert_track_level(self, track: Track, index: int, role: Role, name: str | None = None) -> None:
@@ -453,7 +443,7 @@ class BaseStore:
             TrackLevel(
                 role_id=role.id,
                 level_name=name or role.name,
-            )
+            ),
         )
 
     def get_user_track_level(self, user: User, track: Track) -> TrackLevel | None:
@@ -566,10 +556,11 @@ class BaseStore:
         lines = ["/"]
 
         def _format_node(node: ResourceNode, prefix: str, is_last: bool):
-            lines.append(f"{prefix}{'└── ' if is_last else '├── '}{node.name} (type={node.type}, inherit_mode={node.inherit_mode})")
+            lines.append(f"{prefix}{'└── ' if is_last else '├── '}{node.name} (inherit_mode={node.inherit_mode})")
             children = [n for n in self.resources.values() if n.parent_id == node.id]
             for i, child in enumerate(children):
                 _format_node(child, prefix + ("    " if is_last else "│   "), i == len(children) - 1)
+
         roots = [n for n in self.resources.values() if n.parent_id is None]
         for i, root in enumerate(roots):
             _format_node(root, "", i == len(roots) - 1)
@@ -592,7 +583,9 @@ class BaseStore:
                 perm_str = f" allow={acl.allow_mask}, deny={acl.deny_mask}"
             else:
                 perm_str = " no ACL"
-            lines.append(f"{prefix}{'└── ' if is_last else '├── '}{node.name} (type={node.type}, inherit_mode={node.inherit_mode},{perm_str})")
+            lines.append(
+                f"{prefix}{'└── ' if is_last else '├── '}{node.name} (inherit_mode={node.inherit_mode},{perm_str})"
+            )
             children = [n for n in self.resources.values() if n.parent_id == node.id]
             for i, child in enumerate(children):
                 _format_node(child, prefix + ("    " if is_last else "│   "), i == len(children) - 1)

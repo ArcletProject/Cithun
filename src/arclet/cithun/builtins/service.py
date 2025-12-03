@@ -1,6 +1,5 @@
-from arclet.cithun import PermissionService, PermissionEngine
+from arclet.cithun import PermissionEngine, PermissionService
 
 
 class DefaultPermissionService(PermissionService[dict]):
     engine: PermissionEngine[dict]
-

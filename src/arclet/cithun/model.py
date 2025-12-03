@@ -2,12 +2,12 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from enum import Enum, IntFlag, auto
-from itertools import zip_longest
 from typing import ClassVar
 
 
 class Permission(IntFlag):
     """权限标志位枚举。"""
+
     NONE = 0
     AVAILABLE = auto()
     MODIFY = auto()
@@ -30,6 +30,7 @@ class InheritMode(str, Enum):
 @dataclass
 class ResourceNode:
     """资源节点。"""
+
     id: str
     name: str
     parent_id: str | None = None
@@ -39,6 +40,7 @@ class ResourceNode:
 
 class SubjectType(str, Enum):
     """主体类型（用户或角色）。"""
+
     USER = "USER"
     ROLE = "ROLE"
 
@@ -46,6 +48,7 @@ class SubjectType(str, Enum):
 @dataclass
 class Role:
     """角色。"""
+
     id: str
     name: str
     parent_role_ids: list[str] = field(default_factory=list)
@@ -56,6 +59,7 @@ class Role:
 @dataclass
 class User:
     """用户。"""
+
     id: str
     name: str
     role_ids: list[str] = field(default_factory=list)
@@ -66,6 +70,7 @@ class User:
 @dataclass(eq=True)
 class AclDependency:
     """描述一个 ACL 对“另一个 subject 在某资源上的权限”的依赖。"""
+
     subject_type: SubjectType
     subject_id: str
     resource_id: str
@@ -75,6 +80,7 @@ class AclDependency:
 @dataclass
 class AclEntry:
     """访问控制列表条目。"""
+
     subject_type: SubjectType
     subject_id: str
     resource_id: str
@@ -97,6 +103,7 @@ class TrackLevel:
     - 对应一个 Role
     - 有一个顺序 level_index（0,1,2,...，index 越大代表等级越高）
     """
+
     role_id: str
     level_name: str  # 例如：MEMBER, ADMIN, OWNER
 
@@ -107,6 +114,7 @@ class Track:
     一条“轨道”，管理一组有序角色：
     比如：AUTH_1 ~ AUTH_5。
     """
+
     id: str
     name: str
     levels: list[TrackLevel] = field(default_factory=list)

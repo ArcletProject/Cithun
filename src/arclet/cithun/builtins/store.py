@@ -1,15 +1,14 @@
 from __future__ import annotations
 
-import os
 import json
+import os
 import sqlite3
 from dataclasses import astuple
 from pathlib import Path
-from typing import Iterable
 
 from arclet.cithun import InheritMode
+from arclet.cithun.model import AclDependency, AclEntry, ResourceNode, Role, Track, TrackLevel, User
 from arclet.cithun.store import BaseStore
-from arclet.cithun.model import User, Role, AclEntry, AclDependency, ResourceNode, Track, TrackLevel
 
 
 class JsonStore(BaseStore):
@@ -117,7 +116,7 @@ class SimpleDatabaseStore(BaseStore):
             FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
             FOREIGN KEY (role_id) REFERENCES roles(id) ON DELETE CASCADE
         );
-            
+
         CREATE TABLE IF NOT EXISTS role_inherits (
             role_id TEXT,
             parent_role_id TEXT,
@@ -145,10 +144,10 @@ class SimpleDatabaseStore(BaseStore):
             deny_mask INTEGER DEFAULT 0,
             FOREIGN KEY (resource_id) REFERENCES resources(id) ON DELETE CASCADE
         );
-            
+
         CREATE INDEX IF NOT EXISTS idx_acls_resource_id ON acls(resource_id);
         CREATE INDEX IF NOT EXISTS idx_acls_subject ON acls(subject_type, subject_id);
-        
+
         CREATE TABLE IF NOT EXISTS acl_dependencies (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             acl_id INTEGER NOT NULL,
@@ -159,11 +158,11 @@ class SimpleDatabaseStore(BaseStore):
             FOREIGN KEY (acl_id) REFERENCES acls(id) ON DELETE CASCADE,
             FOREIGN KEY (dep_resource_id) REFERENCES resources(id) ON DELETE CASCADE
         );
-        
+
         CREATE INDEX IF NOT EXISTS idx_acl_deps_acl_id  ON acl_dependencies(acl_id);
         CREATE INDEX IF NOT EXISTS idx_acl_deps_dep_subject ON acl_dependencies(dep_subject_type, dep_subject_id);
         CREATE INDEX IF NOT EXISTS idx_acl_deps_dep_resource ON acl_dependencies(dep_resource_id);
-        
+
         CREATE TABLE IF NOT EXISTS tracks (
             id TEXT PRIMARY KEY,
             name TEXT NOT NULL
@@ -189,10 +188,7 @@ class SimpleDatabaseStore(BaseStore):
         user = User(uid, name)
         self.users[uid] = user
         cursor = self.conn.cursor()
-        cursor.execute(
-            "INSERT INTO users (id, name) VALUES (?, ?);",
-            (user.id, user.name)
-        )
+        cursor.execute("INSERT INTO users (id, name) VALUES (?, ?);", (user.id, user.name))
         self.conn.commit()
         return user
 
@@ -202,10 +198,7 @@ class SimpleDatabaseStore(BaseStore):
         role = Role(rid, name)
         self.roles[rid] = role
         cursor = self.conn.cursor()
-        cursor.execute(
-            "INSERT INTO roles (id, name) VALUES (?, ?);",
-            (role.id, role.name)
-        )
+        cursor.execute("INSERT INTO roles (id, name) VALUES (?, ?);", (role.id, role.name))
         self.conn.commit()
         return role
 
@@ -215,17 +208,15 @@ class SimpleDatabaseStore(BaseStore):
         track = Track(tid, name or tid)
         self.tracks[tid] = track
         cursor = self.conn.cursor()
-        cursor.execute(
-            "INSERT INTO tracks (id, name) VALUES (?, ?);",
-            (track.id, track.name)
-        )
+        cursor.execute("INSERT INTO tracks (id, name) VALUES (?, ?);", (track.id, track.name))
         self.conn.commit()
         return track
 
     def _add_acl(self, acl: AclEntry):
         target_acl = next(
             (
-                i for i in self.acls
+                i
+                for i in self.acls
                 if i.subject_type == acl.subject_type
                 and i.subject_id == acl.subject_id
                 and i.resource_id == acl.resource_id
@@ -238,8 +229,7 @@ class SimpleDatabaseStore(BaseStore):
         cursor.execute(
             "INSERT INTO acls (subject_type, subject_id, resource_id, allow_mask, deny_mask) "
             "VALUES (?, ?, ?, ?, ?);",
-            (acl.subject_type.value, acl.subject_id,
-             acl.resource_id, acl.allow_mask, acl.deny_mask)
+            (acl.subject_type.value, acl.subject_id, acl.resource_id, acl.allow_mask, acl.deny_mask),
         )
         self.conn.commit()
         self.acls.append(acl)
@@ -257,10 +247,8 @@ class SimpleDatabaseStore(BaseStore):
         for rid in additional_keys:
             res = self.resources[rid]
             cursor.execute(
-                "INSERT INTO resources (id, name, parent_id, inherit_mode, type) "
-                "VALUES (?, ?, ?, ?, ?);",
-                (res.id, res.name, res.parent_id,
-                 res.inherit_mode.value, res.type)
+                "INSERT INTO resources (id, name, parent_id, inherit_mode, type) " "VALUES (?, ?, ?, ?, ?);",
+                (res.id, res.name, res.parent_id, res.inherit_mode.value, res.type),
             )
         self.conn.commit()
         return resource
@@ -290,7 +278,7 @@ class SimpleDatabaseStore(BaseStore):
         cursor = self.conn.cursor()
         cursor.execute(
             "SELECT id FROM acls WHERE subject_type = ? AND subject_id = ? AND resource_id = ?;",
-            (target_acl.subject_type.value, target_acl.subject_id, target_acl.resource_id)
+            (target_acl.subject_type.value, target_acl.subject_id, target_acl.resource_id),
         )
         row = cursor.fetchone()
         if row is None:
@@ -300,8 +288,7 @@ class SimpleDatabaseStore(BaseStore):
         cursor.execute(
             "INSERT INTO acl_dependencies (acl_id, dep_subject_type, dep_subject_id, "
             "dep_resource_id, required_mask) VALUES (?, ?, ?, ?, ?);",
-            (acl_id, dep.subject_type.value, dep.subject_id,
-                dep.resource_id, dep.required_mask)
+            (acl_id, dep.subject_type.value, dep.subject_id, dep.resource_id, dep.required_mask),
         )
         self.conn.commit()
         return target_acl
@@ -313,8 +300,7 @@ class SimpleDatabaseStore(BaseStore):
             if parent.id not in child_role.parent_role_ids:
                 cursor = self.conn.cursor()
                 cursor.execute(
-                    "INSERT INTO role_inherits (role_id, parent_role_id) VALUES (?, ?);",
-                    (child_role.id, parent.id)
+                    "INSERT INTO role_inherits (role_id, parent_role_id) VALUES (?, ?);", (child_role.id, parent.id)
                 )
                 self.conn.commit()
                 child_role.parent_role_ids.append(parent.id)
@@ -323,10 +309,7 @@ class SimpleDatabaseStore(BaseStore):
             self._ensure_role(parent)
             if parent.id not in user.role_ids:
                 cursor = self.conn.cursor()
-                cursor.execute(
-                    "INSERT INTO user_roles (user_id, role_id) VALUES (?, ?);",
-                    (user.id, parent.id)
-                )
+                cursor.execute("INSERT INTO user_roles (user_id, role_id) VALUES (?, ?);", (user.id, parent.id))
                 self.conn.commit()
                 user.role_ids.append(parent.id)
 
@@ -338,7 +321,7 @@ class SimpleDatabaseStore(BaseStore):
         cursor = self.conn.cursor()
         cursor.execute(
             "INSERT INTO track_levels (`index`, track_id, role_id, level_name) VALUES (?, ?, ?, ?);",
-            (len(track.levels) - 1, track.id, role.id, level.level_name)
+            (len(track.levels) - 1, track.id, role.id, level.level_name),
         )
         self.conn.commit()
 
@@ -348,14 +331,11 @@ class SimpleDatabaseStore(BaseStore):
             return
         track.levels.insert(index, level)
         cursor = self.conn.cursor()
-        cursor.execute(
-            "DELETE FROM track_levels WHERE track_id = ?;",
-            (track.id,)
-        )
+        cursor.execute("DELETE FROM track_levels WHERE track_id = ?;", (track.id,))
         for idx, lvl in enumerate(track.levels):
             cursor.execute(
                 "INSERT INTO track_levels (`index`, track_id, role_id, level_name) VALUES (?, ?, ?, ?);",
-                (idx, track.id, lvl.role_id, lvl.level_name)
+                (idx, track.id, lvl.role_id, lvl.level_name),
             )
         self.conn.commit()
 
@@ -370,26 +350,18 @@ class SimpleDatabaseStore(BaseStore):
             role = Role(*row, parent_role_ids=[])
             self.roles[role.id] = role
         for user in self.users.values():
-            cursor.execute(
-                "SELECT role_id FROM user_roles WHERE user_id = ?;",
-                (user.id,)
-            )
+            cursor.execute("SELECT role_id FROM user_roles WHERE user_id = ?;", (user.id,))
             role_ids = [r[0] for r in cursor.fetchall()]
             user.role_ids.extend(role_ids)
         for role in self.roles.values():
-            cursor.execute(
-                "SELECT parent_role_id FROM role_inherits WHERE role_id = ?;",
-                (role.id,)
-            )
+            cursor.execute("SELECT parent_role_id FROM role_inherits WHERE role_id = ?;", (role.id,))
             parent_role_ids = [r[0] for r in cursor.fetchall()]
             role.parent_role_ids.extend(parent_role_ids)
         cursor.execute("SELECT id, name, parent_id, inherit_mode, type FROM resources;")
         for row in cursor.fetchall():
             resource = ResourceNode(*row)
             self.resources[resource.id] = resource
-        cursor.execute(
-            "SELECT id, subject_type, subject_id, resource_id, allow_mask, deny_mask FROM acls;"
-        )
+        cursor.execute("SELECT id, subject_type, subject_id, resource_id, allow_mask, deny_mask FROM acls;")
         acl_ids = []
         for row in cursor.fetchall():
             acl = AclEntry(*row[1:], dependencies=[])
@@ -399,7 +371,7 @@ class SimpleDatabaseStore(BaseStore):
             cursor.execute(
                 "SELECT dep_subject_type, dep_subject_id, dep_resource_id, required_mask "
                 "FROM acl_dependencies WHERE acl_id = ?;",
-                (acl_id,)
+                (acl_id,),
             )
             for dep_row in cursor.fetchall():
                 dep = AclDependency(*dep_row)
@@ -410,8 +382,7 @@ class SimpleDatabaseStore(BaseStore):
             self.tracks[track.id] = track
         for track in self.tracks.values():
             cursor.execute(
-                "SELECT role_id, level_name FROM track_levels WHERE track_id = ? ORDER BY `index` ASC;",
-                (track.id,)
+                "SELECT role_id, level_name FROM track_levels WHERE track_id = ? ORDER BY `index` ASC;", (track.id,)
             )
             for level_row in cursor.fetchall():
                 level = TrackLevel(*level_row)

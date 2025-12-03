@@ -8,7 +8,7 @@ authors = [
 dependencies = [
     "typing-extensions>=4.6.3",
 ]
-requires-python = ">=3.9"
+requires-python = ">=3.10"
 readme = "README.md"
 license = {text = "MIT"}
 
@@ -21,15 +21,9 @@ build-backend = "pdm.backend"
 [tool.pdm.build]
 includes = ["src/"]
 
-[tool.pdm.dev-dependencies]
-dev = [
-    "isort>=5.13.2",
-    "black>=24.2.0",
-]
-
 [tool.black]
 line-length = 120
-target-version = ["py39", "py310", "py311"]
+target-version = ["py310", "py311", "py312", "py313", "py314"]
 include = '\.pyi?$'
 extend-exclude = '''
 '''
@@ -41,7 +35,26 @@ skip_gitignore = true
 extra_standard_library = ["typing_extensions"]
 
 [tool.pyright]
-pythonVersion = "3.9"
+pythonVersion = "3.10"
 pythonPlatform = "All"
 typeCheckingMode = "basic"
 disableBytesTypePromotions = true
+
+[tool.ruff]
+line-length = 120
+target-version = "py310"
+include = ["src/**.py"]
+
+[tool.ruff.lint]
+select = ["E", "W", "F", "UP", "C", "T", "PYI", "PT", "Q"]
+ignore = ["C901", "T201", "E731", "E402", "PYI055"]
+
+[tool.pdm.scripts]
+format = { composite = ["isort ./src/","black ./src/","ruff check ./src/"] }
+
+[dependency-groups]
+dev = [
+    "isort==5.13.2",
+    "black>=24.2.0",
+    "ruff>=0.14.7",
+]
