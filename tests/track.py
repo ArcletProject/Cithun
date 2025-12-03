@@ -12,19 +12,24 @@ with system.transaction():
 
     alice = system.create_user("alice", "Alice")
     auths = system.create_track("Authority")
-    system.extend_track(auths, [AUTH_1, AUTH_2, AUTH_3])
+    system.extend_track(auths, [AUTH_1, AUTH_2, AUTH_3], ["member", "admin", "owner"])
 
     system.assign(AUTH_1, "app.data", Permission.AVAILABLE)
     system.assign(AUTH_2, "app.data", Permission.VISIT)
     system.assign(AUTH_3, "app.data", Permission.MODIFY)
 
+    system.set_user_track_level(alice, auths, -1)
+
     system.promote_track(alice, auths)
+    assert system.get_user_track_level(alice, auths).level_name == "member"  # type: ignore
     assert system.test(alice, "app.data", Permission.AVAILABLE)
     assert not system.test(alice, "app.data", Permission.VISIT)
     system.promote_track(alice, auths)
+    assert system.get_user_track_level(alice, auths).level_name == "admin"  # type: ignore
     assert system.test(alice, "app.data", Permission.VISIT)
     assert not system.test(alice, "app.data", Permission.MODIFY)
     system.promote_track(alice, auths)
+    assert system.get_user_track_level(alice, auths).level_name == "owner"  # type: ignore
     assert system.test(alice, "app.data", Permission.MODIFY)
     #
     # system.assign(AUTH_4, "app.secret", Permission.AVAILABLE | Permission.VISIT)
@@ -35,3 +40,5 @@ with system.transaction():
     # system.depend(bob, "app.config", alice, "app.data", Permission.VISIT)
     #
     #
+    system.assign(AUTH_2, "command.foo", Permission.AVAILABLE)
+    assert system.test(alice, "command.foo", Permission.AVAILABLE)

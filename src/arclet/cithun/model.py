@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from enum import Enum, IntFlag, auto
+from itertools import zip_longest
 from typing import ClassVar
 
 
@@ -62,7 +63,7 @@ class User:
     type: ClassVar[SubjectType] = SubjectType.USER
 
 
-@dataclass
+@dataclass(eq=True)
 class AclDependency:
     """描述一个 ACL 对“另一个 subject 在某资源上的权限”的依赖。"""
     subject_type: SubjectType
@@ -89,7 +90,7 @@ class AclEntry:
         )
 
 
-@dataclass
+@dataclass(eq=True)
 class TrackLevel:
     """
     Track 中的一个“等级节点”：
@@ -98,7 +99,6 @@ class TrackLevel:
     """
     role_id: str
     level_name: str  # 例如：MEMBER, ADMIN, OWNER
-    level_index: int   # 例如：AUTH_1=0, AUTH_2=1, ... AUTH_5=4
 
 
 @dataclass

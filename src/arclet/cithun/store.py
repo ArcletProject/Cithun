@@ -26,7 +26,7 @@ class BaseStore:
         self.acls: list[AclEntry] = []
         self.tracks: dict[str, Track] = {}
 
-    def add_resource(self, res: ResourceNode):
+    def _add_resource(self, res: ResourceNode):
         """添加资源节点。
 
         Args:
@@ -43,36 +43,6 @@ class BaseStore:
         Returns:
             ResourceNode: 资源节点对象。
         """
-        return self.resources[rid]
-
-    def get_or_create_resource(
-        self,
-        rid: str,
-        name: str | None = None,
-        parent_id: str | None = None,
-        inherit_mode: InheritMode = InheritMode.MERGE,
-        type_: str = "GENERIC",
-    ) -> ResourceNode:
-        """获取或创建资源节点。
-
-        Args:
-            rid (str): 资源 ID。
-            name (str | None, optional): 资源名称。默认为 None。
-            parent_id (str | None, optional): 父资源 ID。默认为 None。
-            inherit_mode (InheritMode, optional): 继承模式。默认为 InheritMode.MERGE。
-            type_ (str, optional): 资源类型。默认为 "GENERIC"。
-
-        Returns:
-            ResourceNode: 资源节点对象。
-        """
-        if rid not in self.resources:
-            self.resources[rid] = ResourceNode(
-                id=rid,
-                name=name or rid,
-                parent_id=parent_id,
-                inherit_mode=inherit_mode,
-                type=type_,
-            )
         return self.resources[rid]
 
     def get_resource_chain(self, rid: str) -> list[ResourceNode]:
@@ -282,35 +252,26 @@ class BaseStore:
         self.roles[role.id] = role
         return role
 
-    def inherit(self, child: User | Role, parent: User | Role):
+    def inherit(self, child: User | Role, parent: Role):
         """设置继承关系。
 
         Args:
             child (User | Role): 子主体。
-            parent (User | Role): 父主体。
+            parent (Role): 父主体。
 
         Raises:
             ValueError: 当继承关系不合法（如 Role 继承 User）时抛出。
         """
-        if isinstance(child, Role) and isinstance(parent, Role):
+        if isinstance(child, Role):
             child_role = self._ensure_role(child)
             self._ensure_role(parent)
             if parent.id not in child_role.parent_role_ids:
                 child_role.parent_role_ids.append(parent.id)
-
-        elif isinstance(child, User) and isinstance(parent, Role):
+        else:
             user = self._ensure_user(child)
             self._ensure_role(parent)
             if parent.id not in user.role_ids:
                 user.role_ids.append(parent.id)
-
-        elif isinstance(child, User) and isinstance(parent, User):
-            user_child = self._ensure_user(child)
-            self._ensure_user(parent)
-            if parent.id not in user_child.role_ids:
-                user_child.role_ids.append(parent.id)
-        else:
-            raise ValueError("Inherit relationship must be between User-User, User-Role, or Role-Role.")
 
     def create_user(self, uid: str, name: str) -> User:
         """创建用户。
@@ -433,7 +394,7 @@ class BaseStore:
         self.tracks[track.id] = track
         return track
 
-    def add_track(self, track: Track):
+    def _add_track(self, track: Track):
         """添加 Track。
 
         Args:
@@ -460,11 +421,9 @@ class BaseStore:
             role (Role): 对应的角色。
             name (str | None, optional): 等级名称。默认为 None。
         """
-        level_index = len(track.levels)
         track.levels.append(
             TrackLevel(
                 role_id=role.id,
-                level_index=level_index,
                 level_name=name or role.name,
             )
         )
@@ -477,16 +436,8 @@ class BaseStore:
             roles (Iterable[Role]): 角色列表。
             names (Iterable[str] | None, optional): 等级名称列表。默认为 None。
         """
-        level_index = len(track.levels)
         for (role, name) in zip_longest(roles, names or []):
-            track.levels.append(
-                TrackLevel(
-                    role_id=role.id,
-                    level_index=level_index,
-                    level_name=name or role.name,
-                )
-            )
-            level_index += 1
+            self.add_track_level(track, role, name)
 
     def insert_track_level(self, track: Track, index: int, role: Role, name: str | None = None) -> None:
         """在指定位置插入 Track 等级。
@@ -501,24 +452,23 @@ class BaseStore:
             index,
             TrackLevel(
                 role_id=role.id,
-                level_index=index,
                 level_name=name or role.name,
             )
         )
-        # 更新后续 level_index
-        for i in range(index + 1, len(track.levels)):
-            track.levels[i].level_index = i
 
-    def get_track_levels(self, track: Track) -> list[TrackLevel]:
-        """获取 Track 的所有等级，按索引排序。
+    def get_user_track_level(self, user: User, track: Track) -> TrackLevel | None:
+        """获取用户在某个 Track 上的当前等级。
 
         Args:
+            user (User): 用户对象。
             track (Track): Track 对象。
-
         Returns:
-            list[TrackLevel]: 排序后的等级列表。
+            TrackLevel | None: 当前等级对象，若用户不在该 Track 上则返回 None。
         """
-        return sorted(track.levels, key=lambda l: l.level_index)
+        for level in track.levels:
+            if level.role_id in user.role_ids:
+                return level
+        return None
 
     def set_user_track_level(self, user: User, track: Track, level_index: int) -> None:
         """将用户在某个 Track 上设置到指定等级。
@@ -533,13 +483,15 @@ class BaseStore:
         Raises:
             ValueError: 当 Track 没有等级或索引无效时抛出。
         """
-        levels = self.get_track_levels(track)
+        levels = track.levels
         if not levels:
             raise ValueError("Track has no levels.")
-        if level_index < 0 or level_index >= len(levels):
+        if level_index >= len(levels):
             raise ValueError("Invalid level index.")
         track_role_ids = {level.role_id for level in levels}
         user.role_ids = [rid for rid in user.role_ids if rid not in track_role_ids]
+        if level_index < 0:
+            return
         if levels[level_index].role_id not in user.role_ids:
             user.role_ids.append(levels[level_index].role_id)
 
@@ -557,24 +509,21 @@ class BaseStore:
         Returns:
             int | None: 最终的 level_index。如果 Track 没定义等级则返回 None。
         """
-        levels = self.get_track_levels(track)
+        levels = track.levels
         if not levels:
             return
         current_level_index = -1
-        for level in levels:
+        for i, level in enumerate(levels):
             if level.role_id in user.role_ids:
-                current_level_index = level.level_index
+                current_level_index = i
                 break
 
         if current_level_index == -1:
-            current_level_index = levels[0].level_index
+            current_level_index = 0
             self.set_user_track_level(user, track, current_level_index)
             return current_level_index
 
-        all_indexes = sorted({level.level_index for level in levels})
-        idx_pos = all_indexes.index(current_level_index)
-        idx_pos = min(idx_pos + step, len(all_indexes) - 1)
-        new_level_index = all_indexes[idx_pos]
+        new_level_index = min(current_level_index + step, len(levels) - 1)
         self.set_user_track_level(user, track, new_level_index)
         return new_level_index
 
@@ -592,22 +541,19 @@ class BaseStore:
         Returns:
             int | None: 最终的 level_index。如果 Track 没定义等级或用户不在 Track 中则返回 None。
         """
-        levels = self.get_track_levels(track)
+        levels = track.levels
         if not levels:
             return
         current_level_index = -1
-        for level in levels:
+        for i, level in enumerate(levels):
             if level.role_id in user.role_ids:
-                current_level_index = level.level_index
+                current_level_index = i
                 break
 
         if current_level_index == -1:
             return
 
-        all_indexes = sorted({level.level_index for level in levels})
-        idx_pos = all_indexes.index(current_level_index)
-        idx_pos = max(idx_pos - step, 0)
-        new_level_index = all_indexes[idx_pos]
+        new_level_index = max(current_level_index - step, 0)
         self.set_user_track_level(user, track, new_level_index)
         return new_level_index
 

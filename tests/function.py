@@ -33,7 +33,7 @@ with monitor.transaction():
     monitor.suset(admin, "foo.bar.baz", Permission.VISIT | Permission.AVAILABLE | Permission.MODIFY)
 
     user = monitor.create_user("user:cithun", "cithun")
-    monitor.inherit(user, admin)
+    user.inherit(admin)
 
     # monitor.run_attach(user, NodeState("vma"), {})
 

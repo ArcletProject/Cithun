@@ -25,5 +25,6 @@ class DBSystem(SimpleDatabaseStore, DefaultPermissionService, PermissionExecutor
 
     @contextmanager
     def transaction(self):
+        self.load()
         yield
         self.save()
