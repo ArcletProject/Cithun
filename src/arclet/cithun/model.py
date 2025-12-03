@@ -1,96 +1,112 @@
 from __future__ import annotations
 
-from typing import Optional, Protocol
+from dataclasses import dataclass, field
+from enum import Enum, IntFlag, auto
+from itertools import zip_longest
+from typing import ClassVar
 
 
-_MAPPING = {"-": 0, "a": 1, "m": 2, "v": 4}
+class Permission(IntFlag):
+    """权限标志位枚举。"""
+    NONE = 0
+    AVAILABLE = auto()
+    MODIFY = auto()
+    VISIT = auto()
 
 
-class NodeState:
-    AVAILABLE = 1
-    """
-    若 state 所属的权限节点拥有子节点，则表示对应的权限拥有者默认情况下对该节点的子节点拥有使用权限
+class InheritMode(str, Enum):
+    """权限继承模式。"""
 
-    若 state 所属的权限节点不拥有子节点，则表示对应的权限拥有者对该节点拥有使用权限，表示对节点对应的实际内容可用
-    """
+    INHERIT = "INHERIT"
+    """完全继承父节点"""
 
-    MODIFY = 2
-    """
-    若 state 所属的权限节点拥有子节点，则表示对应的权限拥有者可以修改其他权限拥有者对该权限节点及子节点的权限
+    MERGE = "MERGE"
+    """父 + 子合并"""
 
-    若 state 所属的权限节点不拥有子节点，则表示对应的权限拥有者可以修改其他权限拥有者对该权限节点的权限
-    """
-
-    VISIT = 4
-    """
-    若 state 所属的权限节点拥有子节点，则表示对应的权限拥有者可以访问该节点的子节点
-
-    若 state 所属的权限节点不拥有子节点，则表示对应的权限拥有者可以查看节点的状态和内容
-    """
-
-    def __init__(self, state: int | str):
-        if isinstance(state, str):
-            state = sum(_MAPPING[i] for i in state.lower() if i in _MAPPING)
-        if state < 0 or state > 7:
-            raise ValueError("state must be in range [0, 7]")
-        self.state = state
-
-    @property
-    def available(self):
-        return self.state & NodeState.AVAILABLE == NodeState.AVAILABLE
-
-    @property
-    def modify(self):
-        return self.state & NodeState.MODIFY == NodeState.MODIFY
-
-    @property
-    def visit(self):
-        return self.state & NodeState.VISIT == NodeState.VISIT
-
-    def __repr__(self):
-        state = ["-", "-", "-"]
-        if self.available:
-            state[2] = "a"
-        if self.modify:
-            state[1] = "m"
-        if self.visit:
-            state[0] = "v"
-        return "".join(state)
-
-    def __gt__(self, other):
-        return self.state > other.state
-
-    def __ge__(self, other):
-        return self.state >= other.state
-
-    def __lt__(self, other):
-        return self.state < other.state
-
-    def __le__(self, other):
-        return self.state <= other.state
-
-    def __eq__(self, other):
-        return self.state == other.state
-
-    def __hash__(self):
-        return hash(self.state)
-
-    def __bool__(self):
-        return bool(self.state)
-
-    def __int__(self):
-        return self.state
-
-    def __and__(self, other):
-        return NodeState(self.state & other.state)
-
-    def __or__(self, other):
-        return NodeState(self.state | other.state)
+    OVERRIDE = "OVERRIDE"
+    """只看当前节点"""
 
 
-class Owner(Protocol):
+@dataclass
+class ResourceNode:
+    """资源节点。"""
+    id: str
     name: str
-    priority: Optional[int]
-    inherits: list[Owner]
-    nodes: dict[str, NodeState]
-    wildcards: set[str]
+    parent_id: str | None = None
+    inherit_mode: InheritMode = InheritMode.MERGE
+    type: str = "GENERIC"  # FILE / DIR / PROJECT / etc.
+
+
+class SubjectType(str, Enum):
+    """主体类型（用户或角色）。"""
+    USER = "USER"
+    ROLE = "ROLE"
+
+
+@dataclass
+class Role:
+    """角色。"""
+    id: str
+    name: str
+    parent_role_ids: list[str] = field(default_factory=list)
+
+    type: ClassVar[SubjectType] = SubjectType.ROLE
+
+
+@dataclass
+class User:
+    """用户。"""
+    id: str
+    name: str
+    role_ids: list[str] = field(default_factory=list)
+
+    type: ClassVar[SubjectType] = SubjectType.USER
+
+
+@dataclass(eq=True)
+class AclDependency:
+    """描述一个 ACL 对“另一个 subject 在某资源上的权限”的依赖。"""
+    subject_type: SubjectType
+    subject_id: str
+    resource_id: str
+    required_mask: int
+
+
+@dataclass
+class AclEntry:
+    """访问控制列表条目。"""
+    subject_type: SubjectType
+    subject_id: str
+    resource_id: str
+    allow_mask: int
+    deny_mask: int = 0
+    dependencies: list[AclDependency] = field(default_factory=list)
+
+    def __repr__(self) -> str:
+        return (
+            f"AclEntry(subject={self.subject_type.value}:{self.subject_id}, "
+            f"resource={self.resource_id}, allow={Permission(self.allow_mask)!r}, "
+            f"deps={self.dependencies})"
+        )
+
+
+@dataclass(eq=True)
+class TrackLevel:
+    """
+    Track 中的一个“等级节点”：
+    - 对应一个 Role
+    - 有一个顺序 level_index（0,1,2,...，index 越大代表等级越高）
+    """
+    role_id: str
+    level_name: str  # 例如：MEMBER, ADMIN, OWNER
+
+
+@dataclass
+class Track:
+    """
+    一条“轨道”，管理一组有序角色：
+    比如：AUTH_1 ~ AUTH_5。
+    """
+    id: str
+    name: str
+    levels: list[TrackLevel] = field(default_factory=list)
