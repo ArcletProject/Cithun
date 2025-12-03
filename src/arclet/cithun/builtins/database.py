@@ -1,93 +1,12 @@
 from __future__ import annotations
 
-import json
 import os
 import sqlite3
-from dataclasses import astuple
 from pathlib import Path
 
 from arclet.cithun import InheritMode
 from arclet.cithun.model import AclDependency, AclEntry, ResourceNode, Role, Track, TrackLevel, User
 from arclet.cithun.store import BaseStore
-
-
-class JsonStore(BaseStore):
-    def load(self):
-        if self.file.exists():
-            with self.file.open("r", encoding="utf-8") as f:
-                data = json.load(f)
-            user_rows = data.get("users", [])
-            for row in user_rows:
-                user = User(*row)
-                self.users[user.id] = user
-            role_rows = data.get("roles", [])
-            for row in role_rows:
-                role = Role(*row)
-                self.roles[role.id] = role
-            resource_rows = data.get("resources", [])
-            for row in resource_rows:
-                resource = ResourceNode(*row)
-                self.resources[resource.id] = resource
-            acl_rows = data.get("acls", [])
-            alc_dependency_rows = data.get("acl_dependencies", {})
-            for row in acl_rows:
-                acl = AclEntry(*row)
-                dep_rows = alc_dependency_rows.get(f"{acl.subject_type}_{acl.subject_id}_{acl.resource_id}", [])
-                for dep_row in dep_rows:
-                    dep = AclDependency(*dep_row)
-                    acl.dependencies.append(dep)
-                self.acls.append(acl)
-            track_rows = data.get("tracks", [])
-            track_level_rows = data.get("track_levels", {})
-            for row in track_rows:
-                track = Track(*row)
-                level_rows = track_level_rows.get(track.id, [])
-                for level_row in level_rows:
-                    level = TrackLevel(*level_row)
-                    track.levels.append(level)
-                self.tracks[track.id] = track
-        else:
-            with self.file.open("w+", encoding="utf-8") as f:
-                json.dump({}, f, ensure_ascii=False)
-
-    def save(self):
-        data = {
-            "$user_metadata": "id, name, role_ids",
-            "users": [astuple(user) for user in self.users.values()],
-            "$role_metadata": "id, name, parent_role_ids",
-            "roles": [astuple(role) for role in self.roles.values()],
-            "$resource_metadata": "id, name, parent_id, inherit_mode, type",
-            "resources": [astuple(res) for res in self.resources.values()],
-            "$acl_metadata": "subject_type, subject_id, resource_id, allow_mask, deny_mask",
-            "acls": [],
-            "$acl_dependency_metadata": "subject_type, subject_id, resource_id, required_mask",
-            "acl_dependencies": {},
-            "$track_metadata": "id, name",
-            "tracks": [],
-            "$track_level_metadata": "role_id, level_name",
-            "track_levels": {},
-        }
-        for acl in self.acls:
-            acl_row = astuple(acl)
-            data["acls"].append(acl_row[:4])  # 不保存 dependencies 字段
-            dep_rows = [astuple(dep) for dep in acl.dependencies]
-            if dep_rows:
-                data["acl_dependencies"][f"{acl.subject_type}_{acl.subject_id}_{acl.resource_id}"] = dep_rows
-        for track in self.tracks.values():
-            track_row = astuple(track)
-            data["tracks"].append(track_row[:2])  # 不保存 levels 字段
-            level_rows = [astuple(level) for level in track.levels]
-            if level_rows:
-                data["track_levels"][track.id] = level_rows
-        with self.file.open("w", encoding="utf-8") as f:
-            json.dump(data, f, ensure_ascii=False, indent=2)
-
-    def __init__(self, file: os.PathLike[str]):
-        file = Path(file)
-        if not file.suffix.startswith(".json"):
-            raise ValueError(file)
-        self.file = file
-        super().__init__()
 
 
 class SimpleDatabaseStore(BaseStore):

@@ -69,14 +69,13 @@ class PermissionService(Generic[Unpack[Ts]]):
         Returns:
             int: 有效权限掩码。
         """
-        context = context or ()
+        context = context or tuple()
         resource = self.storage.get_resource(resource_id)
         user_id = user.id if isinstance(user, User) else user
         cache: dict[tuple[str, str, str], int] = {}
 
         def permission_lookup(subject: User | Role, *ctx: Unpack[Ts]) -> int:
-            subject_type = SubjectType.USER if isinstance(subject, User) else SubjectType.ROLE
-            return self._calc_permissions_for_subject(subject_type, subject.id, resource, ctx, visited=[], cache=cache)
+            return self._calc_permissions_for_subject(subject.type, subject.id, resource, ctx, visited=[], cache=cache)
 
         base_mask = self._calc_permissions_for_subject(
             SubjectType.USER, user_id, resource, context, visited=[], cache=cache

@@ -13,6 +13,25 @@ class Permission(IntFlag):
     MODIFY = auto()
     VISIT = auto()
 
+    @classmethod
+    def _missing_(cls, value):
+        if isinstance(value, str):
+            value = value.upper()
+            mask = cls.NONE
+            for char in value:
+                if char == "A":
+                    mask |= cls.AVAILABLE
+                elif char == "M":
+                    mask |= cls.MODIFY
+                elif char == "V":
+                    mask |= cls.VISIT
+                elif char == "-":
+                    continue
+                else:
+                    raise ValueError(f"Invalid permission character: {char}")
+            return cls(mask)
+        return super()._missing_(value)
+
 
 class InheritMode(str, Enum):
     """权限继承模式。"""
@@ -118,3 +137,8 @@ class Track:
     id: str
     name: str
     levels: list[TrackLevel] = field(default_factory=list)
+
+
+if __name__ == "__main__":
+    print(repr(Permission(7)))
+    print(repr(Permission("v-a")))
