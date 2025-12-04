@@ -4,10 +4,9 @@ from collections.abc import Callable
 from typing import Generic, Protocol
 from typing_extensions import TypeVarTuple, Unpack
 
-Ts = TypeVarTuple("Ts")
-
-
 from .model import ResourceNode, Role, User
+
+Ts = TypeVarTuple("Ts")
 
 
 class PermissionStrategy(Protocol[Unpack[Ts]]):

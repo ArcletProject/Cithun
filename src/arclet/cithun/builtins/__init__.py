@@ -2,8 +2,8 @@ from contextlib import contextmanager
 
 from arclet.cithun import PermissionEngine, PermissionExecutor, PermissionService
 
-from .json import JsonStore
 from .database import SimpleDatabaseStore
+from .json import JsonStore
 
 
 class System(JsonStore, PermissionService[dict], PermissionExecutor[dict]):
