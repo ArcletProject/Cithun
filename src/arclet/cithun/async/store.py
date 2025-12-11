@@ -5,11 +5,11 @@ from collections.abc import Callable, Iterable
 from itertools import zip_longest
 from re import Pattern
 
-from .config import Config
-from .model import AclDependency, AclEntry, InheritMode, ResourceNode, Role, Track, TrackLevel, User
+from arclet.cithun.config import Config
+from arclet.cithun.model import AclDependency, AclEntry, InheritMode, ResourceNode, Role, Track, TrackLevel, User
 
 
-class BaseStore:
+class AsyncStore:
 
     def __init__(self):
         self.resources: dict[str, ResourceNode] = {}
@@ -18,7 +18,7 @@ class BaseStore:
         self.acls: list[AclEntry] = []
         self.tracks: dict[str, Track] = {}
 
-    def _add_resource(self, res: ResourceNode):
+    async def _add_resource(self, res: ResourceNode):
         """添加资源节点。
 
         Args:
@@ -26,7 +26,7 @@ class BaseStore:
         """
         self.resources[res.id] = res
 
-    def get_resource(self, rid: str) -> ResourceNode:
+    async def get_resource(self, rid: str) -> ResourceNode:
         """获取资源节点。
 
         Args:
@@ -37,7 +37,7 @@ class BaseStore:
         """
         return self.resources[rid]
 
-    def get_resource_chain(self, rid: str) -> list[ResourceNode]:
+    async def get_resource_chain(self, rid: str) -> list[ResourceNode]:
         """获取从当前节点到根节点的资源链。
 
         Args:
@@ -55,7 +55,7 @@ class BaseStore:
             current = self.resources.get(current.parent_id)
         return chain
 
-    def define(
+    async def define(
         self,
         path: str,
         inherit_mode: InheritMode | None = None,
@@ -94,7 +94,7 @@ class BaseStore:
                     inherit_mode=(inherit_mode or InheritMode.OVERRIDE) if is_last else InheritMode.MERGE,
                     type=type_ if is_last else "DIR",
                 )
-                self._add_resource(node)
+                await self._add_resource(node)
             elif is_last:
                 # 已存在，更新属性
                 if inherit_mode is not None:
@@ -108,7 +108,7 @@ class BaseStore:
 
         return node  # type: ignore
 
-    def glob_resources(self, pattern: str) -> list[ResourceNode]:
+    async def glob_resources(self, pattern: str) -> list[ResourceNode]:
         """使用 glob 模式匹配资源。
 
         Args:
@@ -125,7 +125,7 @@ class BaseStore:
                 result.append(res)
         return result
 
-    def match_resources(self, pattern: Callable[[str], bool]) -> list[ResourceNode]:
+    async def match_resources(self, pattern: Callable[[str], bool]) -> list[ResourceNode]:
         """使用回调函数匹配资源。
 
         Args:
@@ -141,7 +141,7 @@ class BaseStore:
                 result.append(res)
         return result
 
-    def assign(
+    async def assign(
         self,
         subject: User | Role,
         resource_path: str | Callable[[str], bool] | Pattern[str],
@@ -167,9 +167,9 @@ class BaseStore:
         if isinstance(resource_path, str):
             resource_path = resource_path.strip(Config.NODE_SEPARATOR)
             if "*" in resource_path or "?" in resource_path or "[" in resource_path:
-                matched = self.glob_resources(resource_path)
+                matched = await self.glob_resources(resource_path)
             else:
-                res = self.define(resource_path)
+                res = await self.define(resource_path)
                 acl = AclEntry(
                     subject_type=subject.type,
                     subject_id=subject.id,
@@ -177,12 +177,12 @@ class BaseStore:
                     allow_mask=allow_mask,
                     deny_mask=deny_mask,
                 )
-                self._add_acl(acl)
+                await self._add_acl(acl)
                 return
         elif isinstance(resource_path, Pattern):
-            matched = self.match_resources(lambda t: bool(resource_path.fullmatch(t)))
+            matched = await self.match_resources(lambda t: bool(resource_path.fullmatch(t)))
         else:
-            matched = self.match_resources(resource_path)
+            matched = await self.match_resources(resource_path)
 
         for res in matched:
             if self.get_primary_acl(subject, res.id):
@@ -194,9 +194,9 @@ class BaseStore:
                 allow_mask=allow_mask,
                 deny_mask=deny_mask,
             )
-            self._add_acl(acl)
+            await self._add_acl(acl)
 
-    def depend(
+    async def depend(
         self,
         target_subject: User | Role,
         target_resource_id: str,
@@ -219,10 +219,10 @@ class BaseStore:
         Raises:
             ValueError: 当目标 ACL 不存在时抛出。
         """
-        target_acl = self.get_primary_acl(target_subject, target_resource_id)
+        target_acl = await self.get_primary_acl(target_subject, target_resource_id)
         if not target_acl:
             raise ValueError("Target ACL does not exist.")
-        dep_res = self.define(dep_resource_path)
+        dep_res = await self.define(dep_resource_path)
         dep = AclDependency(
             subject_type=dep_subject.type,
             subject_id=dep_subject.id,
@@ -244,7 +244,7 @@ class BaseStore:
         self.roles[role.id] = role
         return role
 
-    def inherit(self, child: User | Role, parent: Role):
+    async def inherit(self, child: User | Role, parent: Role):
         """设置继承关系。
 
         Args:
@@ -265,7 +265,7 @@ class BaseStore:
             if parent.id not in user.role_ids:
                 user.role_ids.append(parent.id)
 
-    def create_user(self, uid: str, name: str) -> User:
+    async def create_user(self, uid: str, name: str) -> User:
         """创建用户。
 
         Args:
@@ -279,7 +279,7 @@ class BaseStore:
         self.users[user.id] = user
         return user
 
-    def create_role(self, rid: str, name: str) -> Role:
+    async def create_role(self, rid: str, name: str) -> Role:
         """创建角色。
 
         Args:
@@ -293,7 +293,7 @@ class BaseStore:
         self.roles[role.id] = role
         return role
 
-    def get_user(self, uid: str) -> User:
+    async def get_user(self, uid: str) -> User:
         """获取用户。
 
         Args:
@@ -304,7 +304,7 @@ class BaseStore:
         """
         return self.users[uid]
 
-    def get_role(self, rid: str) -> Role:
+    async def get_role(self, rid: str) -> Role:
         """获取角色。
 
         Args:
@@ -315,10 +315,10 @@ class BaseStore:
         """
         return self.roles[rid]
 
-    def _add_acl(self, acl: AclEntry):
+    async def _add_acl(self, acl: AclEntry):
         self.acls.append(acl)
 
-    def get_acl(self, subject: User | Role, resource_id: str) -> list[AclEntry]:
+    async def get_acl(self, subject: User | Role, resource_id: str) -> list[AclEntry]:
         """获取指定主体在指定资源上的所有 ACL。
 
         Args:
@@ -334,7 +334,7 @@ class BaseStore:
             if acl.subject_type == subject.type and acl.subject_id == subject.id and acl.resource_id == resource_id
         ]
 
-    def get_primary_acl(
+    async def get_primary_acl(
         self,
         subject: User | Role,
         resource_id: str,
@@ -357,7 +357,7 @@ class BaseStore:
             None,
         )
 
-    def iter_acls_for_resource(self, resource_id: str) -> Iterable[AclEntry]:
+    async def iter_acls_for_resource(self, resource_id: str) -> Iterable[AclEntry]:
         """迭代指定资源的所有 ACL。
 
         Args:
@@ -368,7 +368,7 @@ class BaseStore:
         """
         return (acl for acl in self.acls if acl.resource_id == resource_id)
 
-    def create_track(self, tid: str, name: str | None = None) -> Track:
+    async def create_track(self, tid: str, name: str | None = None) -> Track:
         """创建或获取 Track。
 
         Args:
@@ -384,7 +384,7 @@ class BaseStore:
         self.tracks[track.id] = track
         return track
 
-    def _add_track(self, track: Track):
+    async def _add_track(self, track: Track):
         """添加 Track。
 
         Args:
@@ -403,7 +403,7 @@ class BaseStore:
         """
         return self.tracks[tid]
 
-    def add_track_level(self, track: Track, role: Role, name: str | None = None) -> None:
+    async def add_track_level(self, track: Track, role: Role, name: str | None = None) -> None:
         """向 Track 添加一个等级。
 
         Args:
@@ -418,7 +418,7 @@ class BaseStore:
             )
         )
 
-    def extend_track(self, track: Track, roles: Iterable[Role], names: Iterable[str] | None = None) -> None:
+    async def extend_track(self, track: Track, roles: Iterable[Role], names: Iterable[str] | None = None) -> None:
         """批量向 Track 添加等级。
 
         Args:
@@ -427,9 +427,9 @@ class BaseStore:
             names (Iterable[str] | None, optional): 等级名称列表。默认为 None。
         """
         for role, name in zip_longest(roles, names or []):
-            self.add_track_level(track, role, name)
+            await self.add_track_level(track, role, name)
 
-    def insert_track_level(self, track: Track, index: int, role: Role, name: str | None = None) -> None:
+    async def insert_track_level(self, track: Track, index: int, role: Role, name: str | None = None) -> None:
         """在指定位置插入 Track 等级。
 
         Args:
@@ -460,7 +460,7 @@ class BaseStore:
                 return level
         return None
 
-    def set_user_track_level(self, user: User, track: Track, level_index: int) -> None:
+    async def set_user_track_level(self, user: User, track: Track, level_index: int) -> None:
         """将用户在某个 Track 上设置到指定等级。
 
         会清理该用户在该 Track 上已有的其他角色，并赋予新等级对应的角色。
@@ -485,7 +485,7 @@ class BaseStore:
         if levels[level_index].role_id not in user.role_ids:
             user.role_ids.append(levels[level_index].role_id)
 
-    def promote_track(self, user: User, track: Track, step: int = 1):
+    async def promote_track(self, user: User, track: Track, step: int = 1):
         """用户在某个 Track 上升级。
 
         - 当前没有该 Track 角色 -> 为用户挂上最低 level 角色
@@ -510,14 +510,14 @@ class BaseStore:
 
         if current_level_index == -1:
             current_level_index = 0
-            self.set_user_track_level(user, track, current_level_index)
+            await self.set_user_track_level(user, track, current_level_index)
             return current_level_index
 
         new_level_index = min(current_level_index + step, len(levels) - 1)
-        self.set_user_track_level(user, track, new_level_index)
+        await self.set_user_track_level(user, track, new_level_index)
         return new_level_index
 
-    def demote_track(self, user: User, track: Track, step: int = 1):
+    async def demote_track(self, user: User, track: Track, step: int = 1):
         """用户在某个 Track 上降级。
 
         - 当前没有该 Track 角色 -> 无视
@@ -544,7 +544,7 @@ class BaseStore:
             return
 
         new_level_index = max(current_level_index - step, 0)
-        self.set_user_track_level(user, track, new_level_index)
+        await self.set_user_track_level(user, track, new_level_index)
         return new_level_index
 
     def resource_tree(self) -> str:
@@ -566,7 +566,7 @@ class BaseStore:
             _format_node(root, "", i == len(roots) - 1)
         return "\n".join(lines)
 
-    def permission_on(self, subject: User | Role):
+    async def permission_on(self, subject: User | Role):
         """生成指定主体在所有资源上的权限视图。
 
         Args:
@@ -577,8 +577,8 @@ class BaseStore:
         """
         lines = ["/"]
 
-        def _format_node(node: ResourceNode, prefix: str, is_last: bool):
-            acl = self.get_primary_acl(subject, node.id)
+        async def _format_node(node: ResourceNode, prefix: str, is_last: bool):
+            acl = await self.get_primary_acl(subject, node.id)
             if acl:
                 perm_str = f" allow={acl.allow_mask}, deny={acl.deny_mask}"
             else:
@@ -588,9 +588,17 @@ class BaseStore:
             )
             children = [n for n in self.resources.values() if n.parent_id == node.id]
             for i, child in enumerate(children):
-                _format_node(child, prefix + ("    " if is_last else "│   "), i == len(children) - 1)
+                await _format_node(child, prefix + ("    " if is_last else "│   "), i == len(children) - 1)
 
         roots = [n for n in self.resources.values() if n.parent_id is None]
         for i, root in enumerate(roots):
-            _format_node(root, "", i == len(roots) - 1)
+            await _format_node(root, "", i == len(roots) - 1)
         return "\n".join(lines)
+
+    async def update_acl(self, acl: AclEntry):
+        """更新 ACL 条目。
+
+        Args:
+            acl (AclEntry): 要更新的 ACL 条目。
+        """
+        pass

@@ -4,7 +4,6 @@ import os
 import sqlite3
 from pathlib import Path
 
-from arclet.cithun import InheritMode
 from arclet.cithun.model import AclDependency, AclEntry, ResourceNode, Role, Track, TrackLevel, User
 from arclet.cithun.store import BaseStore
 
@@ -153,24 +152,17 @@ class SimpleDatabaseStore(BaseStore):
         self.conn.commit()
         self.acls.append(acl)
 
-    def define(
-        self,
-        path: str,
-        inherit_mode: InheritMode | None = None,
-        type_: str = "GENERIC",
-    ) -> ResourceNode:
-        old_keys = set(self.resources.keys())
-        resource = super().define(path, inherit_mode, type_)
-        additional_keys = set(self.resources.keys()) - old_keys
+    def _add_resource(self, res: ResourceNode):
+        if res.id in self.resources:
+            return self.resources[res.id]
         cursor = self.conn.cursor()
-        for rid in additional_keys:
-            res = self.resources[rid]
-            cursor.execute(
-                "INSERT INTO resources (id, name, parent_id, inherit_mode, type) " "VALUES (?, ?, ?, ?, ?);",
-                (res.id, res.name, res.parent_id, res.inherit_mode.value, res.type),
-            )
+        cursor.execute(
+            "INSERT INTO resources (id, name, parent_id, inherit_mode, type) " "VALUES (?, ?, ?, ?, ?);",
+            (res.id, res.name, res.parent_id, res.inherit_mode.value, res.type),
+        )
         self.conn.commit()
-        return resource
+        self.resources[res.id] = res
+        return res
 
     def depend(
         self,

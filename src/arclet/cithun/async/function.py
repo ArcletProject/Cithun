@@ -5,10 +5,11 @@ from re import Pattern
 from typing import Generic
 from typing_extensions import TypeVarTuple, Unpack
 
-from .config import Config
-from .model import Permission, ResourceNode, Role, User
-from .service import PermissionService
-from .store import BaseStore
+from arclet.cithun.config import Config
+from arclet.cithun.model import Permission, ResourceNode, Role, User
+
+from .service import AsyncPermissionService
+from .store import AsyncStore
 
 
 class PermissionNotFoundError(KeyError):
@@ -26,7 +27,7 @@ class PermissionDeniedError(PermissionError):
 Ts = TypeVarTuple("Ts")
 
 
-class PermissionExecutor(Generic[Unpack[Ts]]):
+class AsyncPermissionExecutor(Generic[Unpack[Ts]]):
     """
     专门负责对“权限状态”的 get/set 操作。
 
@@ -38,13 +39,13 @@ class PermissionExecutor(Generic[Unpack[Ts]]):
 
     def __init__(
         self,
-        storage: BaseStore,
-        perm_service: PermissionService[Unpack[Ts]],
+        storage: AsyncStore,
+        perm_service: AsyncPermissionService[Unpack[Ts]],
     ):
         self.storage = storage
         self.service = perm_service
 
-    def _get_parent_and_self(
+    async def _get_parent_and_self(
         self,
         resource_path: str,
         missing_ok: bool,
@@ -64,19 +65,27 @@ class PermissionExecutor(Generic[Unpack[Ts]]):
         path = resource_path.strip(Config.NODE_SEPARATOR)
         if not path:
             # 根节点没有父节点的概念，这里约定 parent=None, self=root(如果存在)
+            # root = self.storage.resources.get("root")
+            # if root is None and not missing_ok:
             if missing_ok:
                 return None, None
             raise PermissionNotFoundError("Root resource 'root' does not exist")
 
         # 获取 self
-        self_node = self.storage.resources.get(path)
+        try:
+            self_node = await self.storage.get_resource(resource_path)
+        except KeyError:
+            self_node = None
 
         # 获取 parent
         parent_id = None
         if Config.NODE_SEPARATOR in path:
             parent_id, _, _ = path.rpartition(Config.NODE_SEPARATOR)
 
-        parent_node = self.storage.resources.get(parent_id) if parent_id else None
+        try:
+            parent_node = await self.storage.get_resource(parent_id) if parent_id else None
+        except KeyError:
+            parent_node = None
 
         # 父节点不存在
         if parent_node is None and parent_id and not missing_ok:
@@ -88,7 +97,7 @@ class PermissionExecutor(Generic[Unpack[Ts]]):
 
         return parent_node, self_node
 
-    def _ensure_resource_for_set(
+    async def _ensure_resource_for_set(
         self,
         resource_path: str,
         missing_ok: bool,
@@ -105,12 +114,12 @@ class PermissionExecutor(Generic[Unpack[Ts]]):
         Raises:
             PermissionNotFoundError: 当 missing_ok=False 且资源不存在时抛出。
         """
-        parent, node = self._get_parent_and_self(resource_path, missing_ok=missing_ok)
+        parent, node = await self._get_parent_and_self(resource_path, missing_ok=missing_ok)
         if node is None:
             if not missing_ok:
                 raise PermissionNotFoundError(f"Resource '{resource_path}' not found")
             # 自动创建
-            node = self.storage.define(resource_path)
+            node = await self.storage.define(resource_path)
         return parent, node
 
     def _apply_chmod(
@@ -144,7 +153,7 @@ class PermissionExecutor(Generic[Unpack[Ts]]):
         else:
             raise ValueError(f"Unsupported chmod mode: {mode!r}")
 
-    def suget(
+    async def suget(
         self,
         subject: User | Role,
         resource_path: str,
@@ -165,7 +174,7 @@ class PermissionExecutor(Generic[Unpack[Ts]]):
         Raises:
             PermissionNotFoundError: 当 missing_ok=False 且节点不存在时抛出。
         """
-        parent, node = self._get_parent_and_self(resource_path, missing_ok=missing_ok)
+        parent, node = await self._get_parent_and_self(resource_path, missing_ok=missing_ok)
         # 若 missing_ok=True，则 parent 或 node 可能为 None，此时按规则返回 None
         if node is None:
             return None
@@ -175,7 +184,7 @@ class PermissionExecutor(Generic[Unpack[Ts]]):
         # 直接用内部方法计算该 subject 的静态权限
         if isinstance(subject, Role):
             cache: dict[tuple[str, str, str], int] = {}
-            mask = self.service._calc_permissions_for_subject(
+            mask = await self.service._calc_permissions_for_subject(
                 subject.type,
                 subject.id,
                 node,
@@ -184,10 +193,10 @@ class PermissionExecutor(Generic[Unpack[Ts]]):
                 cache=cache,
             )
         else:
-            mask = self.service.get_effective_permissions(subject, node.id, context)
+            mask = await self.service.get_effective_permissions(subject, node.id, context)
         return mask
 
-    def test(
+    async def test(
         self,
         subject: User | Role,
         resource_path: str,
@@ -210,7 +219,7 @@ class PermissionExecutor(Generic[Unpack[Ts]]):
         Raises:
             PermissionNotFoundError: 当 missing_ok=False 且节点不存在时抛出。
         """
-        mask = self.suget(
+        mask = await self.suget(
             subject,
             resource_path,
             missing_ok=missing_ok,
@@ -220,7 +229,7 @@ class PermissionExecutor(Generic[Unpack[Ts]]):
             mask = Permission.VISIT | Permission.AVAILABLE
         return (mask & required_mask) == required_mask
 
-    def get(
+    async def get(
         self,
         executor: User,
         resource_path: str,
@@ -242,12 +251,12 @@ class PermissionExecutor(Generic[Unpack[Ts]]):
             PermissionNotFoundError: 当 missing_ok=False 且节点不存在时抛出。
             PermissionDeniedError: 当执行者在父节点缺少 VISIT+AVAILABLE 权限，或在自身缺少 VISIT 权限时抛出。
         """
-        parent, node = self._get_parent_and_self(resource_path, missing_ok=missing_ok)
+        parent, node = await self._get_parent_and_self(resource_path, missing_ok=missing_ok)
         context = context or tuple()
 
         # 2. 检查执行者在父节点是否有 v+a（VISIT + AVAILABLE）
         if parent is not None:
-            parent_mask = self.service.get_effective_permissions(executor, parent.id, context)
+            parent_mask = await self.service.get_effective_permissions(executor, parent.id, context)
             required_parent = Permission.VISIT | Permission.AVAILABLE
             if (parent_mask & required_parent) != required_parent:
                 raise PermissionDeniedError(f"Executor '{executor.id}' lacks VISIT+AVAILABLE on parent '{parent.id}'")
@@ -257,12 +266,12 @@ class PermissionExecutor(Generic[Unpack[Ts]]):
             return None
 
         # 4. 检查自身权限包含 VISIT
-        self_mask = self.service.get_effective_permissions(executor, node.id, context)
+        self_mask = await self.service.get_effective_permissions(executor, node.id, context)
         if (self_mask & Permission.VISIT) != Permission.VISIT:
             raise PermissionDeniedError(f"Executor '{executor.id}' lacks VISIT on '{node.id}'")
         return self_mask
 
-    def suset(
+    async def suset(
         self,
         subject: User | Role,
         resource_path: str | Callable[[str], bool] | Pattern[str],
@@ -287,28 +296,29 @@ class PermissionExecutor(Generic[Unpack[Ts]]):
         if isinstance(resource_path, str):
             resource_path = resource_path.strip(Config.NODE_SEPARATOR)
             if "*" in resource_path or "?" in resource_path or "[" in resource_path:
-                matched = self.storage.glob_resources(resource_path)
+                matched = await self.storage.glob_resources(resource_path)
             else:
-                _, node = self._ensure_resource_for_set(resource_path, missing_ok=missing_ok)
+                _, node = await self._ensure_resource_for_set(resource_path, missing_ok=missing_ok)
 
-                primary_acl = self.storage.get_primary_acl(subject, node.id)
+                primary_acl = await self.storage.get_primary_acl(subject, node.id)
                 old_mask = primary_acl.allow_mask if primary_acl else 0
                 new_mask = self._apply_chmod(old_mask, mask, mode)
                 if primary_acl:
                     # 更新已有 ACL
                     primary_acl.allow_mask = new_mask
+                    await self.storage.update_acl(primary_acl)
                 else:
                     # 创建新 ACL
-                    self.storage.assign(
+                    await self.storage.assign(
                         subject=subject,
                         resource_path=node.id,
                         allow_mask=new_mask,
                     )
                 return
         elif isinstance(resource_path, Pattern):
-            matched = self.storage.match_resources(lambda t: bool(resource_path.fullmatch(t)))
+            matched = await self.storage.match_resources(lambda t: bool(resource_path.fullmatch(t)))
         else:
-            matched = self.storage.match_resources(resource_path)
+            matched = await self.storage.match_resources(resource_path)
         for node in matched:
             if node.parent_id and node.parent_id not in self.storage.resources:
                 if not missing_ok:
@@ -316,20 +326,21 @@ class PermissionExecutor(Generic[Unpack[Ts]]):
                 else:
                     continue
 
-            primary_acl = self.storage.get_primary_acl(subject, node.id)
+            primary_acl = await self.storage.get_primary_acl(subject, node.id)
             old_mask = primary_acl.allow_mask if primary_acl else 0
             new_mask = self._apply_chmod(old_mask, mask, mode)
 
             if primary_acl is None:
-                self.storage.assign(
+                await self.storage.assign(
                     subject=subject,
                     resource_path=node.id,
                     allow_mask=new_mask,
                 )
             else:
                 primary_acl.allow_mask = new_mask
+                await self.storage.update_acl(primary_acl)
 
-    def set(
+    async def set(
         self,
         executor: User,
         target: User | Role,
@@ -360,41 +371,42 @@ class PermissionExecutor(Generic[Unpack[Ts]]):
         if isinstance(resource_path, str):
             resource_path = resource_path.strip(Config.NODE_SEPARATOR)
             if "*" in resource_path or "?" in resource_path or "[" in resource_path:
-                matched = self.storage.glob_resources(resource_path)
+                matched = await self.storage.glob_resources(resource_path)
             else:
-                parent, node = self._ensure_resource_for_set(resource_path, missing_ok=missing_ok)
+                parent, node = await self._ensure_resource_for_set(resource_path, missing_ok=missing_ok)
 
                 # 2. 检查执行者在父节点是否有 v+m+a
                 if parent is not None:
-                    parent_mask = self.service.get_effective_permissions(executor, parent.id, context)
+                    parent_mask = await self.service.get_effective_permissions(executor, parent.id, context)
                     required_parent = Permission.VISIT | Permission.MODIFY | Permission.AVAILABLE
                     if (parent_mask & required_parent) != required_parent:
                         raise PermissionDeniedError(f"Executor '{executor.id}' lacks V+M+A on parent '{parent.id}'")
 
                 # 4. 检查执行者在自身是否有 MODIFY
-                self_mask = self.service.get_effective_permissions(executor, node.id, context)
+                self_mask = await self.service.get_effective_permissions(executor, node.id, context)
                 if (self_mask & Permission.MODIFY) != Permission.MODIFY:
                     # 不修改该节点状态
                     return
 
-                primary_acl = self.storage.get_primary_acl(target, node.id)
+                primary_acl = await self.storage.get_primary_acl(target, node.id)
                 old_mask = primary_acl.allow_mask if primary_acl else 0
                 new_mask = self._apply_chmod(old_mask, mask, mode)
                 if primary_acl:
                     # 更新已有 ACL
                     primary_acl.allow_mask = new_mask
+                    await self.storage.update_acl(primary_acl)
                 else:
                     # 创建新 ACL
-                    self.storage.assign(
+                    await self.storage.assign(
                         subject=target,
                         resource_path=node.id,
                         allow_mask=new_mask,
                     )
                 return
         elif isinstance(resource_path, Pattern):
-            matched = self.storage.match_resources(lambda t: bool(resource_path.fullmatch(t)))
+            matched = await self.storage.match_resources(lambda t: bool(resource_path.fullmatch(t)))
         else:
-            matched = self.storage.match_resources(resource_path)
+            matched = await self.storage.match_resources(resource_path)
         for node in matched:
             parent = self.storage.resources.get(node.parent_id) if node.parent_id else None
             if node.parent_id and parent is None:
@@ -403,24 +415,25 @@ class PermissionExecutor(Generic[Unpack[Ts]]):
                 else:
                     continue
             if parent is not None:
-                parent_mask = self.service.get_effective_permissions(executor, parent.id, context)
+                parent_mask = await self.service.get_effective_permissions(executor, parent.id, context)
                 required_parent = Permission.VISIT | Permission.MODIFY | Permission.AVAILABLE
                 if (parent_mask & required_parent) != required_parent:
                     raise PermissionDeniedError(f"Executor '{executor.id}' lacks V+M+A on parent '{parent.id}'")
-            self_mask = self.service.get_effective_permissions(executor, node.id, context)
+            self_mask = await self.service.get_effective_permissions(executor, node.id, context)
             if (self_mask & Permission.MODIFY) != Permission.MODIFY:
                 continue  # 无修改权限，跳过
 
             # 5. chmod 更新目标 subject
-            primary_acl = self.storage.get_primary_acl(target, node.id)
+            primary_acl = await self.storage.get_primary_acl(target, node.id)
             old_mask = primary_acl.allow_mask if primary_acl else 0
             new_mask = self._apply_chmod(old_mask, mask, mode)
             if primary_acl:
                 # 更新已有 ACL
                 primary_acl.allow_mask = new_mask
+                await self.storage.update_acl(primary_acl)
             else:
                 # 创建新 ACL
-                self.storage.assign(
+                await self.storage.assign(
                     subject=target,
                     resource_path=node.id,
                     allow_mask=new_mask,
