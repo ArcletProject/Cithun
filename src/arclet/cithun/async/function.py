@@ -305,8 +305,7 @@ class AsyncPermissionExecutor(Generic[Unpack[Ts]]):
                 new_mask = self._apply_chmod(old_mask, mask, mode)
                 if primary_acl:
                     # 更新已有 ACL
-                    primary_acl.allow_mask = new_mask
-                    await self.storage.update_acl(primary_acl)
+                    await self.storage.update_acl(primary_acl, new_mask)
                 else:
                     # 创建新 ACL
                     await self.storage.assign(
@@ -337,8 +336,7 @@ class AsyncPermissionExecutor(Generic[Unpack[Ts]]):
                     allow_mask=new_mask,
                 )
             else:
-                primary_acl.allow_mask = new_mask
-                await self.storage.update_acl(primary_acl)
+                await self.storage.update_acl(primary_acl, new_mask)
 
     async def set(
         self,
@@ -393,8 +391,7 @@ class AsyncPermissionExecutor(Generic[Unpack[Ts]]):
                 new_mask = self._apply_chmod(old_mask, mask, mode)
                 if primary_acl:
                     # 更新已有 ACL
-                    primary_acl.allow_mask = new_mask
-                    await self.storage.update_acl(primary_acl)
+                    await self.storage.update_acl(primary_acl, new_mask)
                 else:
                     # 创建新 ACL
                     await self.storage.assign(
@@ -429,8 +426,7 @@ class AsyncPermissionExecutor(Generic[Unpack[Ts]]):
             new_mask = self._apply_chmod(old_mask, mask, mode)
             if primary_acl:
                 # 更新已有 ACL
-                primary_acl.allow_mask = new_mask
-                await self.storage.update_acl(primary_acl)
+                await self.storage.update_acl(primary_acl, new_mask)
             else:
                 # 创建新 ACL
                 await self.storage.assign(
