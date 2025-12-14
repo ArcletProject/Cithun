@@ -185,7 +185,7 @@ class AsyncStore:
             matched = await self.match_resources(resource_path)
 
         for res in matched:
-            if self.get_primary_acl(subject, res.id):
+            if await self.get_primary_acl(subject, res.id):
                 continue
             acl = AclEntry(
                 subject_type=subject.type,
