@@ -10,18 +10,22 @@ monitor.define("command.test.sub")
 monitor.define("command.test1.sub1")
 
 
-@monitor.engine.register_strategy
-def auth_handler(
-    user: User,
-    resource: ResourceNode,
-    context: tuple[dict],
-    current_mask: int,
-    permission_lookup
-):
-    if not context:
-        return current_mask
-    state = context[0]
-    if resource.id == "command.foo" and state["role"] == "owner":
+# @monitor.engine.register_strategy
+# def auth_handler(
+#     user: User,
+#     resource: ResourceNode,
+#     context: dict | None,
+#     current_mask: int,
+#     permission_lookup
+# ):
+#     if not context:
+#         return current_mask
+#     if resource.id == "command.foo" and context["role"] == "owner":
+#         return Permission(7)
+#     return current_mask
+@monitor.attach("command.foo")
+def command_foo_handler(user: User, context: dict | None, current_mask: int, permission_lookup) -> int:
+    if context and context.get("role") == "owner":
         return Permission(7)
     return current_mask
 # @monitor.attach(lambda pat: pat.startswith("auth."))
@@ -66,7 +70,7 @@ with monitor.transaction():
     monitor.assign(default, "command.foo", Permission.AVAILABLE)
     assert monitor.test(user, "command.foo", Permission.AVAILABLE)
     assert not monitor.test(user, "command.foo", Permission.VISIT)
-    assert monitor.test(user, "command.foo", Permission.MODIFY, context=({"role": "owner"},))
+    assert monitor.test(user, "command.foo", Permission.MODIFY, context={"role": "owner"})
 
 print(monitor.resource_tree())
 print(monitor.permission_on(user))
