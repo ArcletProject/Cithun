@@ -1,33 +1,32 @@
 from __future__ import annotations
 
 from collections.abc import Awaitable, Callable
-from typing import Generic, Protocol
-from typing_extensions import TypeVarTuple, Unpack
+from typing import Generic, Protocol, TypeVar
 
 from arclet.cithun.model import ResourceNode, Role, User
 
-Ts = TypeVarTuple("Ts")
+T = TypeVar("T")
 
 
-class AsyncPermissionStrategy(Protocol[Unpack[Ts]]):
+class AsyncPermissionStrategy(Protocol[T]):
     """权限策略协议。"""
 
     async def __call__(
         self,
         user: User,
         resource: ResourceNode,
-        context: tuple[Unpack[Ts]],
+        context: T | None,
         current_mask: int,
-        permission_lookup: Callable[[User | Role, Unpack[Ts]], Awaitable[int]],
+        permission_lookup: Callable[[User | Role, T | None], Awaitable[int]],
     ) -> int:
         """执行策略。
 
         Args:
             user (User): 用户对象。
             resource (ResourceNode): 资源节点。
-            context (tuple[Unpack[Ts]]): 上下文信息。
+            context (T, optional): 上下文信息。
             current_mask (int): 当前权限掩码。
-            permission_lookup (Callable[[User | Role, Unpack[Ts]], Awaitable[int]]): 权限查找回调函数。
+            permission_lookup (Callable[[User | Role, T | None], Awaitable[int]]): 权限查找回调函数。
 
         Returns:
             int: 更新后的权限掩码。
@@ -35,17 +34,17 @@ class AsyncPermissionStrategy(Protocol[Unpack[Ts]]):
         ...
 
 
-class AsyncPermissionEngine(Generic[Unpack[Ts]]):
+class AsyncPermissionEngine(Generic[T]):
     """权限引擎，管理和应用权限策略。"""
 
     def __init__(self):
-        self._strategies: list[AsyncPermissionStrategy[Unpack[Ts]]] = []
+        self._strategies: list[AsyncPermissionStrategy[T]] = []
 
-    def register_strategy(self, strategy: AsyncPermissionStrategy[Unpack[Ts]]):
+    def register_strategy(self, strategy: AsyncPermissionStrategy[T]):
         """注册策略。
 
         Args:
-            strategy (AsyncPermissionStrategy[Unpack[Ts]]): 策略对象。
+            strategy (AsyncPermissionStrategy[T]): 策略对象。
         """
         self._strategies.append(strategy)
 
@@ -53,18 +52,18 @@ class AsyncPermissionEngine(Generic[Unpack[Ts]]):
         self,
         user: User,
         resource: ResourceNode,
-        context: tuple[Unpack[Ts]],
+        context: T | None,
         mask: int,
-        permission_lookup: Callable[[User | Role, Unpack[Ts]], Awaitable[int]],
+        permission_lookup: Callable[[User | Role, T | None], Awaitable[int]],
     ) -> int:
         """应用所有注册的策略。
 
         Args:
             user (User): 用户对象。
             resource (ResourceNode): 资源节点。
-            context (tuple[Unpack[Ts]]): 上下文信息。
+            context (T, optional): 上下文信息。
             mask (int): 初始权限掩码。
-            permission_lookup (Callable[[User | Role, Unpack[Ts]], Awaitable[int]]): 权限查找回调函数。
+            permission_lookup (Callable[[User | Role, T | None], Awaitable[int]]): 权限查找回调函数。
 
         Returns:
             int: 最终权限掩码。

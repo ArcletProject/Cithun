@@ -2,8 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from re import Pattern
-from typing import Generic
-from typing_extensions import TypeVarTuple, Unpack
+from typing import Generic, TypeVar
 
 from arclet.cithun.config import Config
 from arclet.cithun.model import Permission, ResourceNode, Role, User
@@ -24,10 +23,10 @@ class PermissionDeniedError(PermissionError):
     pass
 
 
-Ts = TypeVarTuple("Ts")
+T = TypeVar("T")
 
 
-class AsyncPermissionExecutor(Generic[Unpack[Ts]]):
+class AsyncPermissionExecutor(Generic[T]):
     """
     专门负责对“权限状态”的 get/set 操作。
 
@@ -40,7 +39,7 @@ class AsyncPermissionExecutor(Generic[Unpack[Ts]]):
     def __init__(
         self,
         storage: AsyncStore,
-        perm_service: AsyncPermissionService[Unpack[Ts]],
+        perm_service: AsyncPermissionService[T],
     ):
         self.storage = storage
         self.service = perm_service
@@ -158,7 +157,7 @@ class AsyncPermissionExecutor(Generic[Unpack[Ts]]):
         subject: User | Role,
         resource_path: str,
         missing_ok: bool = False,
-        context: tuple[Unpack[Ts]] | None = None,
+        context: T | None = None,
     ) -> int | None:
         """root 获取 subject 在指定节点上的权限状态（bitmask），不做权限校验。
 
@@ -166,7 +165,7 @@ class AsyncPermissionExecutor(Generic[Unpack[Ts]]):
             subject (User | Role): 目标主体（用户或角色）。
             resource_path (str): 资源路径。
             missing_ok (bool, optional): 是否允许节点不存在。默认为 False。
-            context (tuple | None, optional): 上下文信息。默认为 None。
+            context (T | None, optional): 上下文信息。默认为 None。
 
         Returns:
             int | None: 权限掩码。如果 missing_ok=True 且节点不存在，返回 None。
@@ -178,8 +177,6 @@ class AsyncPermissionExecutor(Generic[Unpack[Ts]]):
         # 若 missing_ok=True，则 parent 或 node 可能为 None，此时按规则返回 None
         if node is None:
             return None
-
-        context = context or tuple()
 
         # 直接用内部方法计算该 subject 的静态权限
         if isinstance(subject, Role):
@@ -202,7 +199,7 @@ class AsyncPermissionExecutor(Generic[Unpack[Ts]]):
         resource_path: str,
         required_mask: int,
         missing_ok: bool = False,
-        context: tuple[Unpack[Ts]] | None = None,
+        context: T | None = None,
     ) -> bool:
         """root 测试 subject 在指定节点上是否拥有某些权限，不做权限校验。
 
@@ -211,7 +208,7 @@ class AsyncPermissionExecutor(Generic[Unpack[Ts]]):
             resource_path (str): 资源路径。
             required_mask (int): 需要的权限掩码。
             missing_ok (bool, optional): 是否允许节点不存在。默认为 False。
-            context (tuple | None, optional): 上下文信息。默认为 None。
+            context (T | None, optional): 上下文信息。默认为 None。
 
         Returns:
             bool: 是否拥有指定权限。如果 missing_ok=True 且节点不存在，返回 False。
@@ -234,7 +231,7 @@ class AsyncPermissionExecutor(Generic[Unpack[Ts]]):
         executor: User,
         resource_path: str,
         missing_ok: bool = False,
-        context: tuple[Unpack[Ts]] | None = None,
+        context: T | None = None,
     ) -> int | None:
         """执行者获取自己在目标节点的权限状态。
 
@@ -252,7 +249,6 @@ class AsyncPermissionExecutor(Generic[Unpack[Ts]]):
             PermissionDeniedError: 当执行者在父节点缺少 VISIT+AVAILABLE 权限，或在自身缺少 VISIT 权限时抛出。
         """
         parent, node = await self._get_parent_and_self(resource_path, missing_ok=missing_ok)
-        context = context or tuple()
 
         # 2. 检查执行者在父节点是否有 v+a（VISIT + AVAILABLE）
         if parent is not None:
@@ -346,7 +342,7 @@ class AsyncPermissionExecutor(Generic[Unpack[Ts]]):
         mask: int,
         mode: str = "=",
         missing_ok: bool = False,
-        context: tuple[Unpack[Ts]] | None = None,
+        context: T | None = None,
     ) -> None:
         """执行者为目标 subject 设置目标节点的权限状态。
 
@@ -364,8 +360,6 @@ class AsyncPermissionExecutor(Generic[Unpack[Ts]]):
             PermissionDeniedError: 当执行者权限不足时抛出。
             ValueError: 当 mode 不支持时抛出。
         """
-        context = context or tuple()
-
         if isinstance(resource_path, str):
             resource_path = resource_path.strip(Config.NODE_SEPARATOR)
             if "*" in resource_path or "?" in resource_path or "[" in resource_path:

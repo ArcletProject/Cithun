@@ -5,7 +5,7 @@
 groups = ["default", "dev"]
 strategy = []
 lock_version = "4.5.0"
-content_hash = "sha256:bcc488613c207225ef9398e8be0500a5a7779c7d3671f3899a870faad580ac02"
+content_hash = "sha256:df85b98f5a5b494df917f7cb04c7d81571e116e5ec3058bcc5a9108fc9699257"
 
 [[metadata.targets]]
 requires_python = ">=3.10"

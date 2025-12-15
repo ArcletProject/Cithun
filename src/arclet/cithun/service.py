@@ -1,13 +1,12 @@
 from __future__ import annotations
 
-from typing import Generic
-from typing_extensions import TypeVarTuple, Unpack
+from typing import Generic, TypeVar
 
 from .model import AclEntry, InheritMode, ResourceNode, Role, SubjectType, User
 from .store import BaseStore
 from .strategy import PermissionEngine
 
-Ts = TypeVarTuple("Ts")
+T = TypeVar("T")
 
 
 class DependencyCycleError(RuntimeError):
@@ -48,8 +47,8 @@ def expand_roles(role_ids: list[str], roles: dict[str, Role]) -> set[str]:
     return result
 
 
-class PermissionService(Generic[Unpack[Ts]]):
-    def __init__(self, storage: BaseStore, engine: PermissionEngine[Unpack[Ts]]):
+class PermissionService(Generic[T]):
+    def __init__(self, storage: BaseStore, engine: PermissionEngine[T]):
         self.storage = storage
         self.engine = engine
 
@@ -57,24 +56,23 @@ class PermissionService(Generic[Unpack[Ts]]):
         self,
         user: str | User,
         resource_id: str,
-        context: tuple[Unpack[Ts]] | None = None,
+        context: T | None = None,
     ) -> int:
         """计算用户在指定资源上的有效权限。
 
         Args:
             user (str | User): 用户 ID 或用户对象。
             resource_id (str): 资源 ID。
-            context (tuple[Unpack[Ts]] | None, optional): 上下文信息。默认为 None。
+            context (T | None, optional): 上下文信息。默认为 None。
 
         Returns:
             int: 有效权限掩码。
         """
-        context = context or tuple()
         resource = self.storage.get_resource(resource_id)
         user_id = user.id if isinstance(user, User) else user
         cache: dict[tuple[str, str, str], int] = {}
 
-        def permission_lookup(subject: User | Role, *ctx: Unpack[Ts]) -> int:
+        def permission_lookup(subject: User | Role, ctx: T | None) -> int:
             return self._calc_permissions_for_subject(subject.type, subject.id, resource, ctx, visited=[], cache=cache)
 
         base_mask = self._calc_permissions_for_subject(
@@ -94,7 +92,7 @@ class PermissionService(Generic[Unpack[Ts]]):
         user: str | User,
         resource_id: str,
         required_mask: int,
-        context: tuple[Unpack[Ts]] | None = None,
+        context: T | None = None,
     ) -> bool:
         """检查用户是否拥有指定资源的特定权限。
 
@@ -102,7 +100,7 @@ class PermissionService(Generic[Unpack[Ts]]):
             user (str | User): 用户 ID 或用户对象。
             resource_id (str): 资源 ID。
             required_mask (int): 需要的权限掩码。
-            context (tuple[Unpack[Ts]] | None, optional): 上下文信息。默认为 None。
+            context (T | None, optional): 上下文信息。默认为 None。
 
         Returns:
             bool: 如果拥有所有请求的权限则返回 True，否则返回 False。
@@ -115,7 +113,7 @@ class PermissionService(Generic[Unpack[Ts]]):
         subject_type: SubjectType,
         subject: str | User | Role,
         resource: ResourceNode,
-        context: tuple[Unpack[Ts]],
+        context: T | None,
         visited: list[tuple[str, str, str]],
         cache: dict[tuple[str, str, str], int],
     ) -> int:
@@ -174,7 +172,7 @@ class PermissionService(Generic[Unpack[Ts]]):
     def _check_acl_dependencies(
         self,
         acl: AclEntry,
-        context: tuple[Unpack[Ts]],
+        context: T | None,
         visited: list[tuple[str, str, str]],
         cache: dict[tuple[str, str, str], int],
     ) -> bool:
