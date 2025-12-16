@@ -594,3 +594,15 @@ class BaseStore:
         for i, root in enumerate(roots):
             _format_node(root, "", i == len(roots) - 1)
         return "\n".join(lines)
+
+    def update_acl(self, acl: AclEntry, allow_mask: int, deny_mask: int | None = None) -> None:
+        """更新 ACL 条目。
+
+        Args:
+            acl (AclEntry): 要更新的 ACL 条目。
+            allow_mask (int): 新的允许权限掩码。
+            deny_mask (int | None, optional): 新的拒绝权限掩码。
+        """
+        acl.allow_mask = allow_mask
+        if deny_mask is not None:
+            acl.deny_mask = deny_mask

@@ -152,7 +152,7 @@ class PermissionExecutor(Generic[T]):
         Raises:
             ResourceNotFoundError: 当 missing_ok=False 且节点不存在时抛出。
         """
-        parent, node = self._get_parent_and_self(resource_path, missing_ok=missing_ok)
+        _, node = self._get_parent_and_self(resource_path, missing_ok=missing_ok)
         # 若 missing_ok=True，则 parent 或 node 可能为 None，此时按规则返回 None
         if node is None:
             return None
@@ -225,22 +225,16 @@ class PermissionExecutor(Generic[T]):
 
         Raises:
             ResourceNotFoundError: 当 missing_ok=False 且节点不存在时抛出。
-            PermissionDeniedError: 当执行者在父节点缺少 VISIT+AVAILABLE 权限，或在自身缺少 VISIT 权限时抛出。
+            PermissionDeniedError: 当执行者在节点缺少 VISIT 权限时抛出。
         """
-        parent, node = self._get_parent_and_self(resource_path, missing_ok=missing_ok)
-
-        # 2. 检查执行者在父节点是否有 v+a（VISIT + AVAILABLE）
-        if parent is not None:
-            parent_mask = self.service.get_effective_permissions(executor, parent.id, context)
-            required_parent = Permission.VISIT | Permission.AVAILABLE
-            if (parent_mask & required_parent) != required_parent:
-                raise PermissionDeniedError(f"Executor '{executor.id}' lacks VISIT+AVAILABLE on parent '{parent.id}'")
+        _, node = self._get_parent_and_self(resource_path, missing_ok=missing_ok)
 
         # 3. 自身不存在
         if node is None:
             return None
 
-        # 4. 检查自身权限包含 VISIT
+        # 检查自身权限包含 VISIT
+        # 如果某个父节点显式 deny V，这里自然拿不到 V
         self_mask = self.service.get_effective_permissions(executor, node.id, context)
         if (self_mask & Permission.VISIT) != Permission.VISIT:
             raise PermissionDeniedError(f"Executor '{executor.id}' lacks VISIT on '{node.id}'")
@@ -252,6 +246,7 @@ class PermissionExecutor(Generic[T]):
         resource_path: str | Callable[[str], bool] | Pattern[str],
         mask: int,
         mode: str = "=",
+        deny: bool = False,
         missing_ok: bool = False,
     ) -> None:
         """root 为 subject 在指定节点上“设置权限状态”。
@@ -261,6 +256,7 @@ class PermissionExecutor(Generic[T]):
             resource_path (str | Callable[[str], bool] | Pattern[str]): 资源路径或匹配模式。
             mask (int): 权限掩码。
             mode (str, optional): 设置模式 ("=", "+", "-")。默认为 "="。
+            deny (bool, optional): 是否设置为 deny 掩码。默认为 False（设置为 allow）。
             missing_ok (bool, optional): 是否允许节点不存在。默认为 False。
 
         Raises:
@@ -276,17 +272,20 @@ class PermissionExecutor(Generic[T]):
                 _, node = self._ensure_resource_for_set(resource_path, missing_ok=missing_ok)
 
                 primary_acl = self.storage.get_primary_acl(subject, node.id)
-                old_mask = primary_acl.allow_mask if primary_acl else 0
+                old_mask = (primary_acl.deny_mask if deny else primary_acl.allow_mask) if primary_acl else 0
                 new_mask = self._apply_chmod(old_mask, mask, mode)
-                if primary_acl:
-                    # 更新已有 ACL
-                    primary_acl.allow_mask = new_mask
-                else:
-                    # 创建新 ACL
+                if primary_acl is None:
                     self.storage.assign(
                         subject=subject,
                         resource_path=node.id,
-                        allow_mask=new_mask,
+                        allow_mask=0 if deny else new_mask,
+                        deny_mask=new_mask if deny else 0,
+                    )
+                else:
+                    self.storage.update_acl(
+                        primary_acl,
+                        allow_mask=new_mask if not deny else primary_acl.allow_mask,
+                        deny_mask=new_mask if deny else primary_acl.deny_mask,
                     )
                 return
         elif isinstance(resource_path, Pattern):
@@ -301,17 +300,43 @@ class PermissionExecutor(Generic[T]):
                     continue
 
             primary_acl = self.storage.get_primary_acl(subject, node.id)
-            old_mask = primary_acl.allow_mask if primary_acl else 0
+            old_mask = (primary_acl.deny_mask if deny else primary_acl.allow_mask) if primary_acl else 0
             new_mask = self._apply_chmod(old_mask, mask, mode)
 
             if primary_acl is None:
                 self.storage.assign(
                     subject=subject,
                     resource_path=node.id,
-                    allow_mask=new_mask,
+                    allow_mask=0 if deny else new_mask,
+                    deny_mask=new_mask if deny else 0,
                 )
             else:
-                primary_acl.allow_mask = new_mask
+                self.storage.update_acl(
+                    primary_acl,
+                    allow_mask=new_mask if not deny else primary_acl.allow_mask,
+                    deny_mask=new_mask if deny else primary_acl.deny_mask,
+                )
+
+    def chmod(
+        self,
+        subject: User | Role,
+        resource_path: str | Callable[[str], bool] | Pattern[str],
+        pattern: str,
+        missing_ok: bool = False,
+    ) -> None:
+        """root 为 subject 在指定节点上“设置权限状态”。
+
+        Args:
+            subject (User | Role): 目标主体（用户或角色）。
+            resource_path (str | Callable[[str], bool] | Pattern[str]): 资源路径或匹配模式。
+            pattern (str): 权限表达式。形如 [target][op][flags]。
+            missing_ok (bool, optional): 是否允许节点不存在。默认为 False。
+
+        Raises:
+            ResourceNotFoundError: 当 missing_ok=False 且节点不存在时抛出。
+            ValueError: 当 mode 不支持时抛出。
+        """
+        return self.suset(subject, resource_path, *Permission.parse(pattern), missing_ok=missing_ok)
 
     def set(
         self,
@@ -320,6 +345,7 @@ class PermissionExecutor(Generic[T]):
         resource_path: str | Callable[[str], bool] | Pattern[str],
         mask: int,
         mode: str = "=",
+        deny: bool = False,
         missing_ok: bool = False,
         context: T | None = None,
     ) -> None:
@@ -331,6 +357,7 @@ class PermissionExecutor(Generic[T]):
             resource_path (str | Callable[[str], bool] | Pattern[str]): 资源路径或匹配模式。
             mask (int): 权限掩码。
             mode (str, optional): 设置模式 ("=", "+", "-")。默认为 "="。
+            deny (bool, optional): 是否设置为 deny 掩码。默认为 False（设置为 allow）。
             missing_ok (bool, optional): 是否允许节点不存在。默认为 False。
             context (T | None, optional): 上下文信息。默认为 None。
 
@@ -361,17 +388,20 @@ class PermissionExecutor(Generic[T]):
                     return
 
                 primary_acl = self.storage.get_primary_acl(target, node.id)
-                old_mask = primary_acl.allow_mask if primary_acl else 0
+                old_mask = (primary_acl.deny_mask if deny else primary_acl.allow_mask) if primary_acl else 0
                 new_mask = self._apply_chmod(old_mask, mask, mode)
-                if primary_acl:
-                    # 更新已有 ACL
-                    primary_acl.allow_mask = new_mask
-                else:
-                    # 创建新 ACL
+                if primary_acl is None:
                     self.storage.assign(
                         subject=target,
                         resource_path=node.id,
-                        allow_mask=new_mask,
+                        allow_mask=0 if deny else new_mask,
+                        deny_mask=new_mask if deny else 0,
+                    )
+                else:
+                    self.storage.update_acl(
+                        primary_acl,
+                        allow_mask=new_mask if not deny else primary_acl.allow_mask,
+                        deny_mask=new_mask if deny else primary_acl.deny_mask,
                     )
                 return
         elif isinstance(resource_path, Pattern):
@@ -396,15 +426,18 @@ class PermissionExecutor(Generic[T]):
 
             # 5. chmod 更新目标 subject
             primary_acl = self.storage.get_primary_acl(target, node.id)
-            old_mask = primary_acl.allow_mask if primary_acl else 0
+            old_mask = (primary_acl.deny_mask if deny else primary_acl.allow_mask) if primary_acl else 0
             new_mask = self._apply_chmod(old_mask, mask, mode)
-            if primary_acl:
-                # 更新已有 ACL
-                primary_acl.allow_mask = new_mask
-            else:
-                # 创建新 ACL
+            if primary_acl is None:
                 self.storage.assign(
                     subject=target,
                     resource_path=node.id,
-                    allow_mask=new_mask,
+                    allow_mask=0 if deny else new_mask,
+                    deny_mask=new_mask if deny else 0,
+                )
+            else:
+                self.storage.update_acl(
+                    primary_acl,
+                    allow_mask=new_mask if not deny else primary_acl.allow_mask,
+                    deny_mask=new_mask if deny else primary_acl.deny_mask,
                 )
