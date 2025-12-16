@@ -1,6 +1,6 @@
 [project]
 name = "arclet-cithun"
-version = "1.2.0"
+version = "1.2.1"
 description = "A permission system modeled on the file permission system under Unix."
 authors = [
     {name = "RF-Tar-Railt", email = "rf_tar_railt@qq.com"},

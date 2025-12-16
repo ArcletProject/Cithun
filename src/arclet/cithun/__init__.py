@@ -12,3 +12,4 @@ from .store import BaseStore as BaseStore
 from .strategy import PermissionEngine as PermissionEngine
 
 PE = PermissionExecutor
+PermissionNotFoundError = ResourceNotFoundError
