@@ -54,10 +54,16 @@ with monitor.transaction():
     assert monitor.test(user, "foo.bar.baz", Permission.VISIT)
     assert not monitor.test(user, "foo.bar.baz.qux", Permission.AVAILABLE)
 
-    monitor.suset(user, "foo.bar.baz.qux", Permission(7))
-    assert monitor.get(user, "foo.bar.baz.qux") == Permission.VISIT | Permission.AVAILABLE | Permission.MODIFY
+    monitor.chmod(user, "foo.bar.baz.qux", "a=vm")
+    assert monitor.get(user, "foo.bar.baz.qux") == Permission.VISIT | Permission.MODIFY
 
-    monitor.suset(admin, "foo.bar.baz", Permission.VISIT | Permission.AVAILABLE)
+    monitor.chmod(user, "foo.bar.baz.qux", "a+x")
+    assert monitor.get(user, "foo.bar.baz.qux") == Permission.VISIT | Permission.MODIFY | Permission.AVAILABLE
+
+    monitor.chmod(user, "foo.bar.baz.qux", "a-r")
+    assert monitor.suget(user, "foo.bar.baz.qux") == Permission.MODIFY | Permission.AVAILABLE
+
+    monitor.chmod(admin, "foo.bar.baz", "a=rx")
     try:
         monitor.set(user, user, "foo.bar.baz.qux", Permission.VISIT | Permission.MODIFY)
     except PermissionError as e:

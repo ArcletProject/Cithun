@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field
 from enum import Enum, IntFlag, auto
 from typing import ClassVar
@@ -19,18 +20,41 @@ class Permission(IntFlag):
             value = value.upper()
             mask = cls.NONE
             for char in value:
-                if char == "A":
+                if char == "A" or char == "X":
                     mask |= cls.AVAILABLE
-                elif char == "M":
+                elif char == "M" or char == "W":
                     mask |= cls.MODIFY
-                elif char == "V":
+                elif char == "V" or char == "R":
                     mask |= cls.VISIT
+                elif char == "*":
+                    mask |= cls.AVAILABLE | cls.MODIFY | cls.VISIT
                 elif char == "-":
                     continue
                 else:
                     raise ValueError(f"Invalid permission character: {char}")
             return cls(mask)
         return super()._missing_(value)
+
+    @classmethod
+    def parse(cls, expr: str):
+        """解析权限表达式为掩码。
+        Args:
+            expr (str): 权限表达式。形如 [target][op][flags].
+        Returns:
+            tuple[Permission, str, bool]: (mask, mode, deny)
+        """
+        expr = expr.strip().lower()
+        if not expr:
+            raise ValueError("Empty permission expression")
+        if len(expr) == 1:
+            return cls(int(expr) if expr.isdigit() else expr), "=", False
+        mat = re.fullmatch(r"(?P<target>[ad])?(?P<op>[=+-])?(?P<flags>(?:[*0-7]|[vmarwx]+))", expr)
+        if not mat:
+            raise ValueError(f"Invalid permission expression: {expr!r}")
+        deny = (mat.groupdict()["target"] or "a") == "d"
+        mode = mat.groupdict()["op"] or "="
+        flags_str = mat.groupdict()["flags"]
+        return cls(int(flags_str) if flags_str.isdigit() else flags_str), mode, deny
 
 
 class InheritMode(str, Enum):
