@@ -5,23 +5,11 @@ from re import Pattern
 from typing import Generic, TypeVar
 
 from arclet.cithun.config import Config
+from arclet.cithun.exceptions import PermissionDeniedError, ResourceNotFoundError
 from arclet.cithun.model import Permission, ResourceNode, Role, User
 
 from .service import AsyncPermissionService
 from .store import AsyncStore
-
-
-class PermissionNotFoundError(KeyError):
-    """资源不存在或父资源不存在时抛出。"""
-
-    pass
-
-
-class PermissionDeniedError(PermissionError):
-    """权限不足时抛出。"""
-
-    pass
-
 
 T = TypeVar("T")
 
@@ -59,7 +47,7 @@ class AsyncPermissionExecutor(Generic[T]):
             tuple[ResourceNode | None, ResourceNode | None]: (parent_node, self_node)。
 
         Raises:
-            PermissionNotFoundError: 当 missing_ok=False 且节点不存在时抛出。
+            ResourceNotFoundError: 当 missing_ok=False 且节点不存在时抛出。
         """
         path = resource_path.strip(Config.NODE_SEPARATOR)
         if not path:
@@ -68,7 +56,7 @@ class AsyncPermissionExecutor(Generic[T]):
             # if root is None and not missing_ok:
             if missing_ok:
                 return None, None
-            raise PermissionNotFoundError("Root resource 'root' does not exist")
+            raise ResourceNotFoundError("Root resource 'root' does not exist")
 
         # 获取 self
         try:
@@ -88,11 +76,11 @@ class AsyncPermissionExecutor(Generic[T]):
 
         # 父节点不存在
         if parent_node is None and parent_id and not missing_ok:
-            raise PermissionNotFoundError(f"Parent resource '{parent_id}' not found")
+            raise ResourceNotFoundError(f"Parent resource '{parent_id}' not found")
 
         # 自身不存在
         if self_node is None and not missing_ok:
-            raise PermissionNotFoundError(f"Resource '{path}' not found")
+            raise ResourceNotFoundError(f"Resource '{path}' not found")
 
         return parent_node, self_node
 
@@ -111,12 +99,12 @@ class AsyncPermissionExecutor(Generic[T]):
             tuple[ResourceNode | None, ResourceNode]: (parent_node, self_node)。
 
         Raises:
-            PermissionNotFoundError: 当 missing_ok=False 且资源不存在时抛出。
+            ResourceNotFoundError: 当 missing_ok=False 且资源不存在时抛出。
         """
         parent, node = await self._get_parent_and_self(resource_path, missing_ok=missing_ok)
         if node is None:
             if not missing_ok:
-                raise PermissionNotFoundError(f"Resource '{resource_path}' not found")
+                raise ResourceNotFoundError(f"Resource '{resource_path}' not found")
             # 自动创建
             node = await self.storage.define(resource_path)
         return parent, node
@@ -171,7 +159,7 @@ class AsyncPermissionExecutor(Generic[T]):
             int | None: 权限掩码。如果 missing_ok=True 且节点不存在，返回 None。
 
         Raises:
-            PermissionNotFoundError: 当 missing_ok=False 且节点不存在时抛出。
+            ResourceNotFoundError: 当 missing_ok=False 且节点不存在时抛出。
         """
         parent, node = await self._get_parent_and_self(resource_path, missing_ok=missing_ok)
         # 若 missing_ok=True，则 parent 或 node 可能为 None，此时按规则返回 None
@@ -214,7 +202,7 @@ class AsyncPermissionExecutor(Generic[T]):
             bool: 是否拥有指定权限。如果 missing_ok=True 且节点不存在，返回 False。
 
         Raises:
-            PermissionNotFoundError: 当 missing_ok=False 且节点不存在时抛出。
+            ResourceNotFoundError: 当 missing_ok=False 且节点不存在时抛出。
         """
         mask = await self.suget(
             subject,
@@ -245,7 +233,7 @@ class AsyncPermissionExecutor(Generic[T]):
             int | None: 权限掩码。如果 missing_ok=True 且节点不存在，返回 None。
 
         Raises:
-            PermissionNotFoundError: 当 missing_ok=False 且节点不存在时抛出。
+            ResourceNotFoundError: 当 missing_ok=False 且节点不存在时抛出。
             PermissionDeniedError: 当执行者在父节点缺少 VISIT+AVAILABLE 权限，或在自身缺少 VISIT 权限时抛出。
         """
         parent, node = await self._get_parent_and_self(resource_path, missing_ok=missing_ok)
@@ -285,7 +273,7 @@ class AsyncPermissionExecutor(Generic[T]):
             missing_ok (bool, optional): 是否允许节点不存在。默认为 False。
 
         Raises:
-            PermissionNotFoundError: 当 missing_ok=False 且节点不存在时抛出。
+            ResourceNotFoundError: 当 missing_ok=False 且节点不存在时抛出。
             ValueError: 当 mode 不支持时抛出。
         """
 
@@ -317,7 +305,7 @@ class AsyncPermissionExecutor(Generic[T]):
         for node in matched:
             if node.parent_id and node.parent_id not in self.storage.resources:
                 if not missing_ok:
-                    raise PermissionNotFoundError(f"Parent '{node.parent_id}' for '{node.id}' not found")
+                    raise ResourceNotFoundError(f"Parent '{node.parent_id}' for '{node.id}' not found")
                 else:
                     continue
 
@@ -356,7 +344,7 @@ class AsyncPermissionExecutor(Generic[T]):
             context (tuple | None, optional): 上下文信息。默认为 None。
 
         Raises:
-            PermissionNotFoundError: 当 missing_ok=False 且节点不存在时抛出。
+            ResourceNotFoundError: 当 missing_ok=False 且节点不存在时抛出。
             PermissionDeniedError: 当执行者权限不足时抛出。
             ValueError: 当 mode 不支持时抛出。
         """
@@ -402,7 +390,7 @@ class AsyncPermissionExecutor(Generic[T]):
             parent = self.storage.resources.get(node.parent_id) if node.parent_id else None
             if node.parent_id and parent is None:
                 if not missing_ok:
-                    raise PermissionNotFoundError(f"Parent '{node.parent_id}' for '{node.id}' not found")
+                    raise ResourceNotFoundError(f"Parent '{node.parent_id}' for '{node.id}' not found")
                 else:
                     continue
             if parent is not None:

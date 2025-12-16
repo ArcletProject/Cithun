@@ -2,18 +2,12 @@ from __future__ import annotations
 
 from typing import Generic, TypeVar
 
+from .exceptions import DependencyCycleError
 from .model import AclEntry, InheritMode, ResourceNode, Role, SubjectType, User
 from .store import BaseStore
 from .strategy import PermissionEngine
 
 T = TypeVar("T")
-
-
-class DependencyCycleError(RuntimeError):
-    def __init__(self, cycle_nodes: list[tuple[str, str, str]]):
-        self.cycle_nodes = cycle_nodes
-        msg = "Dependency cycle detected: " + " -> ".join(f"{t}:{sid}@{rid}" for (t, sid, rid) in cycle_nodes)
-        super().__init__(msg)
 
 
 def expand_roles(role_ids: list[str], roles: dict[str, Role]) -> set[str]:

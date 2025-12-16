@@ -1,3 +1,6 @@
+from .exceptions import DependencyCycleError as DependencyCycleError
+from .exceptions import PermissionDeniedError as PermissionDeniedError
+from .exceptions import ResourceNotFoundError as ResourceNotFoundError
 from .function import PermissionExecutor as PermissionExecutor
 from .model import InheritMode as InheritMode
 from .model import Permission as Permission
