@@ -6,7 +6,7 @@ from itertools import zip_longest
 from re import Pattern
 
 from .config import Config
-from .model import AclDependency, AclEntry, InheritMode, ResourceNode, Role, Track, TrackLevel, User
+from .model import AclDependency, AclEntry, InheritMode, Permission, ResourceNode, Role, Track, TrackLevel, User
 
 
 class BaseStore:
@@ -145,8 +145,8 @@ class BaseStore:
         self,
         subject: User | Role,
         resource_path: str | Callable[[str], bool] | Pattern[str],
-        allow_mask: int,
-        deny_mask: int = 0,
+        allow_mask: Permission,
+        deny_mask: Permission = Permission.NONE,
     ) -> None:
         """为指定 subject 在资源上分配 ACL。
 
@@ -160,8 +160,8 @@ class BaseStore:
         Args:
             subject (User | Role): 目标主体。
             resource_path (str | Callable[[str], bool] | Pattern[str]): 资源路径或匹配模式。
-            allow_mask (int): 允许权限掩码。
-            deny_mask (int, optional): 拒绝权限掩码。默认为 0。
+            allow_mask (Permission): 允许权限掩码。
+            deny_mask (Permission, optional): 拒绝权限掩码。默认为 Permission.None (0)。
         """
 
         if isinstance(resource_path, str):
@@ -202,7 +202,7 @@ class BaseStore:
         target_resource_id: str,
         dep_subject: User | Role,
         dep_resource_path: str,
-        required_mask: int,
+        required_mask: Permission,
     ) -> AclEntry:
         """添加 ACL 依赖。
 
@@ -211,7 +211,7 @@ class BaseStore:
             target_resource_id (str): 目标资源 ID。
             dep_subject (User | Role): 依赖主体。
             dep_resource_path (str): 依赖资源路径。
-            required_mask (int): 依赖所需的权限掩码。
+            required_mask (Permission): 依赖所需的权限掩码。
 
         Returns:
             AclEntry: 更新后的目标 ACL 条目。
@@ -553,13 +553,13 @@ class BaseStore:
         Returns:
             str: 资源树字符串。
         """
-        lines = ["/"]
+        lines = ["$"]
 
         def _format_node(node: ResourceNode, prefix: str, is_last: bool):
-            lines.append(f"{prefix}{'└── ' if is_last else '├── '}{node.name} (inherit_mode={node.inherit_mode})")
             children = [n for n in self.resources.values() if n.parent_id == node.id]
+            lines.append(f"{prefix}{'└─ ' if is_last else '├─ '}{node.name}{'/' if children else ''}")
             for i, child in enumerate(children):
-                _format_node(child, prefix + ("    " if is_last else "│   "), i == len(children) - 1)
+                _format_node(child, prefix + ("   " if is_last else "│  "), i == len(children) - 1)
 
         roots = [n for n in self.resources.values() if n.parent_id is None]
         for i, root in enumerate(roots):
@@ -575,33 +575,31 @@ class BaseStore:
         Returns:
             str: 权限视图字符串。
         """
-        lines = ["/"]
+        lines = ["$"]
 
         def _format_node(node: ResourceNode, prefix: str, is_last: bool):
             acl = self.get_primary_acl(subject, node.id)
             if acl:
-                perm_str = f" allow={acl.allow_mask}, deny={acl.deny_mask}"
+                perm_str = f"(allow: {acl.allow_mask:#}, deny: {acl.deny_mask:#})"
             else:
-                perm_str = " no ACL"
-            lines.append(
-                f"{prefix}{'└── ' if is_last else '├── '}{node.name} (inherit_mode={node.inherit_mode},{perm_str})"
-            )
+                perm_str = ""
             children = [n for n in self.resources.values() if n.parent_id == node.id]
+            lines.append(f"{prefix}{'└─ ' if is_last else '├─ '}{node.name}{'/' if children else ''} {perm_str}")
             for i, child in enumerate(children):
-                _format_node(child, prefix + ("    " if is_last else "│   "), i == len(children) - 1)
+                _format_node(child, prefix + ("   " if is_last else "│  "), i == len(children) - 1)
 
         roots = [n for n in self.resources.values() if n.parent_id is None]
         for i, root in enumerate(roots):
             _format_node(root, "", i == len(roots) - 1)
         return "\n".join(lines)
 
-    def update_acl(self, acl: AclEntry, allow_mask: int, deny_mask: int | None = None) -> None:
+    def update_acl(self, acl: AclEntry, allow_mask: Permission, deny_mask: Permission | None = None) -> None:
         """更新 ACL 条目。
 
         Args:
             acl (AclEntry): 要更新的 ACL 条目。
-            allow_mask (int): 新的允许权限掩码。
-            deny_mask (int | None, optional): 新的拒绝权限掩码。
+            allow_mask (Permission): 新的允许权限掩码。
+            deny_mask (Permission | None, optional): 新的拒绝权限掩码。
         """
         acl.allow_mask = allow_mask
         if deny_mask is not None:

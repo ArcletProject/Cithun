@@ -3,7 +3,7 @@ from __future__ import annotations
 from typing import Generic, TypeVar
 
 from .exceptions import DependencyCycleError
-from .model import AclEntry, InheritMode, ResourceNode, Role, SubjectType, User
+from .model import AclEntry, InheritMode, Permission, ResourceNode, Role, SubjectType, User
 from .store import BaseStore
 from .strategy import PermissionEngine
 
@@ -51,7 +51,7 @@ class PermissionService(Generic[T]):
         user: str | User,
         resource_id: str,
         context: T | None = None,
-    ) -> int:
+    ) -> Permission:
         """计算用户在指定资源上的有效权限。
 
         Args:
@@ -60,13 +60,13 @@ class PermissionService(Generic[T]):
             context (T | None, optional): 上下文信息。默认为 None。
 
         Returns:
-            int: 有效权限掩码。
+            Permission: 有效权限掩码。
         """
         resource = self.storage.get_resource(resource_id)
         user_id = user.id if isinstance(user, User) else user
-        cache: dict[tuple[str, str, str], int] = {}
+        cache: dict[tuple[str, str, str], Permission] = {}
 
-        def permission_lookup(subject: User | Role, ctx: T | None) -> int:
+        def permission_lookup(subject: User | Role, ctx: T | None) -> Permission:
             return self._calc_permissions_for_subject(subject.type, subject.id, resource, ctx, visited=[], cache=cache)
 
         base_mask = self._calc_permissions_for_subject(
@@ -109,8 +109,8 @@ class PermissionService(Generic[T]):
         resource: ResourceNode,
         context: T | None,
         visited: list[tuple[str, str, str]],
-        cache: dict[tuple[str, str, str], int],
-    ) -> int:
+        cache: dict[tuple[str, str, str], Permission],
+    ) -> Permission:
         subject_id = subject.id if isinstance(subject, (User, Role)) else subject
         key = (subject_type.value, subject_id, resource.id)
         if key in cache:
@@ -122,7 +122,7 @@ class PermissionService(Generic[T]):
         visited.append(key)
 
         chain = list(reversed(self.storage.get_resource_chain(resource.id)))
-        effective_mask = 0
+        effective_mask = Permission.NONE
 
         # Determine relevant subjects (self + inherited roles)
         relevant_subjects: set[tuple[SubjectType, str]] = set()
@@ -137,8 +137,8 @@ class PermissionService(Generic[T]):
                 relevant_subjects.add((SubjectType.ROLE, rid))
 
         for node in chain:
-            node_allow = 0
-            node_deny = 0
+            node_allow = Permission.NONE
+            node_deny = Permission.NONE
 
             for acl in self.storage.iter_acls_for_resource(node.id):
                 if (acl.subject_type, acl.subject_id) not in relevant_subjects:
@@ -168,7 +168,7 @@ class PermissionService(Generic[T]):
         acl: AclEntry,
         context: T | None,
         visited: list[tuple[str, str, str]],
-        cache: dict[tuple[str, str, str], int],
+        cache: dict[tuple[str, str, str], Permission],
     ) -> bool:
         if not acl.dependencies:
             return True

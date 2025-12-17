@@ -4,7 +4,7 @@ import os
 import sqlite3
 from pathlib import Path
 
-from arclet.cithun.model import AclDependency, AclEntry, ResourceNode, Role, Track, TrackLevel, User
+from arclet.cithun.model import AclDependency, AclEntry, Permission, ResourceNode, Role, Track, TrackLevel, User
 from arclet.cithun.store import BaseStore
 
 
@@ -170,7 +170,7 @@ class SimpleDatabaseStore(BaseStore):
         target_resource_id: str,
         dep_subject: User | Role,
         dep_resource_path: str,
-        required_mask: int,
+        required_mask: Permission,
     ) -> AclEntry:
         target_acl = self.get_primary_acl(target_subject, target_resource_id)
         if not target_acl:
@@ -248,6 +248,18 @@ class SimpleDatabaseStore(BaseStore):
                 "INSERT INTO track_levels (`index`, track_id, role_id, level_name) VALUES (?, ?, ?, ?);",
                 (idx, track.id, lvl.role_id, lvl.level_name),
             )
+        self.conn.commit()
+
+    def update_acl(self, acl: AclEntry, allow_mask: Permission, deny_mask: Permission | None = None) -> None:
+        acl.allow_mask = allow_mask
+        if deny_mask is not None:
+            acl.deny_mask = deny_mask
+        cursor = self.conn.cursor()
+        cursor.execute(
+            "UPDATE acls SET allow_mask = ?, deny_mask = ? "
+            "WHERE subject_type = ? AND subject_id = ? AND resource_id = ?;",
+            (acl.allow_mask, acl.deny_mask, acl.subject_type.value, acl.subject_id, acl.resource_id),
+        )
         self.conn.commit()
 
     def load(self):

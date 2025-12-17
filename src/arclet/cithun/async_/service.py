@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Generic, TypeVar
 
-from arclet.cithun.model import AclEntry, InheritMode, ResourceNode, Role, SubjectType, User
+from arclet.cithun.model import AclEntry, InheritMode, Permission, ResourceNode, Role, SubjectType, User
 
 from .store import AsyncStore
 from .strategy import AsyncPermissionEngine
@@ -58,7 +58,7 @@ class AsyncPermissionService(Generic[T]):
         user: str | User,
         resource_id: str,
         context: T | None = None,
-    ) -> int:
+    ) -> Permission:
         """计算用户在指定资源上的有效权限。
 
         Args:
@@ -71,9 +71,9 @@ class AsyncPermissionService(Generic[T]):
         """
         resource = await self.storage.get_resource(resource_id)
         user_id = user.id if isinstance(user, User) else user
-        cache: dict[tuple[str, str, str], int] = {}
+        cache: dict[tuple[str, str, str], Permission] = {}
 
-        async def permission_lookup(subject: User | Role, ctx: T | None) -> int:
+        async def permission_lookup(subject: User | Role, ctx: T | None) -> Permission:
             return await self._calc_permissions_for_subject(
                 subject.type, subject.id, resource, ctx, visited=[], cache=cache
             )
@@ -94,7 +94,7 @@ class AsyncPermissionService(Generic[T]):
         self,
         user: str | User,
         resource_id: str,
-        required_mask: int,
+        required_mask: Permission,
         context: T | None = None,
     ) -> bool:
         """检查用户是否拥有指定资源的特定权限。
@@ -102,7 +102,7 @@ class AsyncPermissionService(Generic[T]):
         Args:
             user (str | User): 用户 ID 或用户对象。
             resource_id (str): 资源 ID。
-            required_mask (int): 需要的权限掩码。
+            required_mask (Permission): 需要的权限掩码。
             context (T | None, optional): 上下文信息。默认为 None。
 
         Returns:
@@ -118,8 +118,8 @@ class AsyncPermissionService(Generic[T]):
         resource: ResourceNode,
         context: T | None,
         visited: list[tuple[str, str, str]],
-        cache: dict[tuple[str, str, str], int],
-    ) -> int:
+        cache: dict[tuple[str, str, str], Permission],
+    ) -> Permission:
         subject_id = subject.id if isinstance(subject, (User, Role)) else subject
         key = (subject_type.value, subject_id, resource.id)
         if key in cache:
@@ -131,7 +131,7 @@ class AsyncPermissionService(Generic[T]):
         visited.append(key)
 
         chain = list(reversed(await self.storage.get_resource_chain(resource.id)))
-        effective_mask = 0
+        effective_mask = Permission.NONE
 
         # Determine relevant subjects (self + inherited roles)
         relevant_subjects: set[tuple[SubjectType, str]] = set()
@@ -146,8 +146,8 @@ class AsyncPermissionService(Generic[T]):
                 relevant_subjects.add((SubjectType.ROLE, rid))
 
         for node in chain:
-            node_allow = 0
-            node_deny = 0
+            node_allow = Permission.NONE
+            node_deny = Permission.NONE
 
             for acl in await self.storage.iter_acls_for_resource(node.id):
                 if (acl.subject_type, acl.subject_id) not in relevant_subjects:
@@ -177,7 +177,7 @@ class AsyncPermissionService(Generic[T]):
         acl: AclEntry,
         context: T | None,
         visited: list[tuple[str, str, str]],
-        cache: dict[tuple[str, str, str], int],
+        cache: dict[tuple[str, str, str], Permission],
     ) -> bool:
         if not acl.dependencies:
             return True

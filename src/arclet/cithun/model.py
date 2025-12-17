@@ -35,6 +35,21 @@ class Permission(IntFlag):
             return cls(mask)
         return super()._missing_(value)
 
+    def __format__(self, format_spec):
+        if format_spec == "#":
+            flags = []
+            for flag, char in (
+                (Permission.VISIT, "v"),
+                (Permission.MODIFY, "m"),
+                (Permission.AVAILABLE, "a"),
+            ):
+                if self & flag:
+                    flags.append(char)
+                else:
+                    flags.append("-")
+            return "".join(flags)
+        return super().__format__(format_spec)
+
     @classmethod
     def parse(cls, expr: str):
         """解析权限表达式为掩码。
@@ -117,7 +132,7 @@ class AclDependency:
     subject_type: SubjectType
     subject_id: str
     resource_id: str
-    required_mask: int
+    required_mask: Permission
 
 
 @dataclass
@@ -127,14 +142,14 @@ class AclEntry:
     subject_type: SubjectType
     subject_id: str
     resource_id: str
-    allow_mask: int
-    deny_mask: int = 0
+    allow_mask: Permission
+    deny_mask: Permission = Permission.NONE
     dependencies: list[AclDependency] = field(default_factory=list)
 
     def __repr__(self) -> str:
         return (
             f"AclEntry(subject={self.subject_type.value}:{self.subject_id}, "
-            f"resource={self.resource_id}, allow={Permission(self.allow_mask)!r}, "
+            f"resource={self.resource_id}, allow={self.allow_mask!r}, deny={self.deny_mask!r}, "
             f"deps={self.dependencies})"
         )
 
