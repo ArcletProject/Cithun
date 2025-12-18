@@ -1,7 +1,5 @@
 from functools import wraps
-from pathlib import Path
-from typing import Callable, TypeVar
-from typing_extensions import Concatenate, ParamSpec
+from typing import Callable, TypeVar, Concatenate, ParamSpec
 
 from arclet.cithun import Permission, User
 from arclet.cithun.builtins import System
