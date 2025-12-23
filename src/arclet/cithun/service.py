@@ -181,3 +181,99 @@ class PermissionService(Generic[T]):
             if (dep_mask & dep.required_mask) != dep.required_mask:
                 return False
         return True
+
+    def permission_on(
+        self,
+        subject: User | Role,
+        expand_inherited: bool = False,
+        show_dependencies: bool = False,
+        show_mode: bool = False,
+        context: T | None = None,
+    ) -> str:
+        """生成指定主体在所有资源上的权限视图。
+
+        Args:
+            subject (User | Role): 目标主体。
+            expand_inherited (bool, optional): 是否展示“展开继承后”的最终权限。默认为 False。
+            show_dependencies (bool, optional): 是否显示 ACL 依赖。默认为 False。
+            show_mode (bool, optional): 是否显示资源继承模式。默认为 False。
+            context (T, optional): 权限计算上下文。expand_inherited=True 时使用。
+
+        Returns:
+            str: 权限视图字符串。
+        """
+
+        # lines: list[str] = [f"Permission view for {subject.type.value}:{subject.id}"]
+        # if expand_inherited:
+        #     lines.append("(with inheritance & dependencies)")
+        # else:
+        #     lines.append("(static ACL entries only)")
+
+        # 为方便展示，按资源树的结构来打印
+        lines = ["$"]
+
+        # 预先构建 parent -> children 映射，保证稳定顺序
+        children_map: dict[str | None, list[ResourceNode]] = {}
+        for res in self.storage.resources.values():
+            children_map.setdefault(res.parent_id, []).append(res)
+
+        def _format_node(node: ResourceNode, prefix: str, is_last: bool):
+            # 当前资源行前缀
+            branch = "└─ " if is_last else "├─ "
+            # 找出在该资源上、属于 subject 的 ACL
+            acl = self.storage.get_primary_acl(subject, node.id)
+
+            # 基本资源信息
+            # 例如: ├─ app/  [mode=MERGE, type=DIR]
+            suffix = f" [mode: {node.inherit_mode.value}]" if show_mode else ""
+
+            # 展开后的“最终权限”
+            final_perm_str = ""
+            if expand_inherited and isinstance(subject, User):
+                # 对 User：直接用 get_effective_permissions
+                eff = self.get_effective_permissions(subject.id, node.id, context)
+                final_perm_str = f":'{eff:#}'" if eff else ""
+            elif expand_inherited and isinstance(subject, Role):
+                # 对 Role：使用内部 subject 视角计算（只看这个角色及其继承）
+                cache: dict[tuple[str, str, str], Permission] = {}
+                eff = self._calc_permissions_for_subject(
+                    SubjectType.ROLE,
+                    subject.id,
+                    node,
+                    context,
+                    visited=[],
+                    cache=cache,
+                )
+                final_perm_str = f":'{eff:#}'" if eff else ""
+
+            # 构造当前节点标题行
+            children = children_map.get(node.id, [])
+            name_display = node.name + ("/" if children else "")
+            line = f"{prefix}{branch}{name_display} {final_perm_str}"
+
+            if acl:
+                line += f" (allow: '{acl.allow_mask:#}', deny: '{f'{acl.deny_mask:#}' if acl.deny_mask else 'NONE'}')"
+            line += suffix
+            lines.append(line)
+            if show_dependencies and acl and acl.dependencies:
+                for index, dep in enumerate(acl.dependencies):
+                    dep_line = (
+                        f"{prefix}{'   '}{'└' if index == len(acl.dependencies) - 1 else '├'}"
+                        f">{f' {dep.subject_type.value}:{dep.subject_id}  @' if dep.subject_id != subject.type and dep.subject_id != subject.id else ''}"  # noqa: E501
+                        f" {dep.resource_id} >= '{dep.required_mask:#}'"
+                    )
+                    lines.append(dep_line)
+            # 递归打印子节点
+            for i, child in enumerate(children):
+                _format_node(
+                    child,
+                    prefix + ("   " if is_last else "│  "),
+                    i == len(children) - 1,
+                )
+
+        # 找出根节点
+        roots = children_map.get(None, [])
+        for i, root in enumerate(roots):
+            _format_node(root, "", i == len(roots) - 1)
+
+        return "\n".join(lines)

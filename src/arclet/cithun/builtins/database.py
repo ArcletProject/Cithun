@@ -145,8 +145,7 @@ class SimpleDatabaseStore(BaseStore):
             return target_acl
         cursor = self.conn.cursor()
         cursor.execute(
-            "INSERT INTO acls (subject_type, subject_id, resource_id, allow_mask, deny_mask) "
-            "VALUES (?, ?, ?, ?, ?);",
+            "INSERT INTO acls (subject_type, subject_id, resource_id, allow_mask, deny_mask) VALUES (?, ?, ?, ?, ?);",
             (acl.subject_type.value, acl.subject_id, acl.resource_id, acl.allow_mask, acl.deny_mask),
         )
         self.conn.commit()
@@ -157,7 +156,7 @@ class SimpleDatabaseStore(BaseStore):
             return self.resources[res.id]
         cursor = self.conn.cursor()
         cursor.execute(
-            "INSERT INTO resources (id, name, parent_id, inherit_mode, type) " "VALUES (?, ?, ?, ?, ?);",
+            "INSERT INTO resources (id, name, parent_id, inherit_mode, type) VALUES (?, ?, ?, ?, ?);",
             (res.id, res.name, res.parent_id, res.inherit_mode.value, res.type),
         )
         self.conn.commit()

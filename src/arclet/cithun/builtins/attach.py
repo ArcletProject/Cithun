@@ -5,10 +5,12 @@ from typing import TypeAlias, TypeVar, overload
 
 from arclet.cithun import Permission, PermissionEngine, ResourceNode, Role, User
 
-Attach: TypeAlias = "Callable[[User, dict | None, int, Callable[[User | Role, dict | None], Permission]], Permission]"
+Attach: TypeAlias = (
+    "Callable[[User, dict | None, Permission, Callable[[User | Role, dict | None], Permission]], Permission]"
+)
 TAttach = TypeVar("TAttach", bound=Attach)
 Attach1: TypeAlias = (
-    "Callable[[User, str, dict | None, int, Callable[[User | Role, dict | None], Permission]], Permission]"
+    "Callable[[User, str, dict | None, Permission, Callable[[User | Role, dict | None], Permission]], Permission]"
 )
 TAttach1 = TypeVar("TAttach1", bound=Attach1)
 

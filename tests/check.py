@@ -80,4 +80,4 @@ except PermissionError as e:
     assert str(e) == "Permission denied for user:cithun to access foo.bar.qux"
 
 print(monitor.resource_tree())
-print(monitor.permission_on(user))
+print(monitor.permission_on(user, True, True, True))

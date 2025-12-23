@@ -20,7 +20,6 @@ from arclet.cithun.model import (
 
 
 class AsyncStore:
-
     def __init__(self):
         self.resources: dict[str, ResourceNode] = {}
         self.users: dict[str, User] = {}
@@ -574,33 +573,6 @@ class AsyncStore:
         roots = [n for n in self.resources.values() if n.parent_id is None]
         for i, root in enumerate(roots):
             _format_node(root, "", i == len(roots) - 1)
-        return "\n".join(lines)
-
-    async def permission_on(self, subject: User | Role):
-        """生成指定主体在所有资源上的权限视图。
-
-        Args:
-            subject (User | Role): 目标主体。
-
-        Returns:
-            str: 权限视图字符串。
-        """
-        lines = ["/"]
-
-        async def _format_node(node: ResourceNode, prefix: str, is_last: bool):
-            acl = await self.get_primary_acl(subject, node.id)
-            if acl:
-                perm_str = f"(allow: {acl.allow_mask:#}, deny: {acl.deny_mask:#})"
-            else:
-                perm_str = ""
-            children = [n for n in self.resources.values() if n.parent_id == node.id]
-            lines.append(f"{prefix}{'└─ ' if is_last else '├─ '}{node.name}{'/' if children else ''} {perm_str}")
-            for i, child in enumerate(children):
-                await _format_node(child, prefix + ("   " if is_last else "│  "), i == len(children) - 1)
-
-        roots = [n for n in self.resources.values() if n.parent_id is None]
-        for i, root in enumerate(roots):
-            await _format_node(root, "", i == len(roots) - 1)
         return "\n".join(lines)
 
     async def update_acl(self, acl: AclEntry, allow_mask: Permission, deny_mask: Permission | None = None) -> None:
