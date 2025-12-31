@@ -24,6 +24,7 @@ monitor.define("command.test1.sub1")
 #         return Permission(7)
 #     return current_mask
 @monitor.attach("command.foo")
+@monitor.attach("command.foo.*")
 def command_foo_handler(user: User, context: dict | None, current_mask: Permission, permission_lookup) -> Permission:
     if context and context.get("role") == "owner":
         return Permission(7)
@@ -78,7 +79,8 @@ with monitor.transaction():
     assert not monitor.test(user, "command.foo", Permission.VISIT)
     assert monitor.test(user, "command.foo", Permission.MODIFY, context={"role": "owner"})
 
-    monitor.depend(user, "command.test.sub",  user,"command.foo", Permission.VISIT)
+    monitor.depend(user, "command.test.sub",  user, "command.foo", Permission.VISIT)
 
 print(monitor.resource_tree())
-print(monitor.permission_on(user, True, True, True))
+print(monitor.permission_on(user, True, True, False))
+print(monitor.permission_on(user, True, True, False, context={"role": "owner"}))

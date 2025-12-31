@@ -1,6 +1,8 @@
 from collections.abc import Callable
 from functools import reduce
 from operator import or_
+import fnmatch
+import re
 from typing import TypeAlias, TypeVar, overload
 
 from arclet.cithun import Permission, PermissionEngine, ResourceNode, Role, User
@@ -46,7 +48,11 @@ class Attacher:
         if isinstance(pattern, str):
 
             def decorator(func: Attach, /):
-                self.attachs.append((lambda p: p == pattern, lambda u, _, *args: func(u, *args)))
+                if re.search(r"[*?\[\]]", pattern):
+                    predicate = lambda p: fnmatch.fnmatch(p, pattern)
+                else:
+                    predicate = lambda p: p == pattern
+                self.attachs.append((predicate, lambda u, _, *args: func(u, *args)))
                 return func
 
             return decorator

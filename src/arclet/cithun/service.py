@@ -62,24 +62,11 @@ class PermissionService(Generic[T]):
         Returns:
             Permission: 有效权限掩码。
         """
+
         resource = self.storage.get_resource(resource_id)
         user_id = user.id if isinstance(user, User) else user
         cache: dict[tuple[str, str, str], Permission] = {}
-
-        def permission_lookup(subject: User | Role, ctx: T | None) -> Permission:
-            return self._calc_permissions_for_subject(subject.type, subject.id, resource, ctx, visited=[], cache=cache)
-
-        base_mask = self._calc_permissions_for_subject(
-            SubjectType.USER, user_id, resource, context, visited=[], cache=cache
-        )
-
-        return self.engine.apply_strategies(
-            self.storage.get_user(user_id),
-            resource,
-            context,
-            base_mask,
-            permission_lookup,
-        )
+        return self._get_effective_permissions_for_subject(SubjectType.USER, user_id, resource, context, visited=[], cache=cache)
 
     def has_permission(
         self,
@@ -101,6 +88,45 @@ class PermissionService(Generic[T]):
         """
         eff = self.get_effective_permissions(user, resource_id, context)
         return (eff & required_mask) == required_mask
+
+    def _get_effective_permissions_for_subject(
+        self,
+        subject_type: SubjectType,
+        subject_id: str,
+        resource: ResourceNode,
+        context: T | None,
+        visited: list[tuple[str, str, str]],
+        cache: dict[tuple[str, str, str], Permission],
+    ) -> Permission:
+        """
+        计算任意 subject（USER/ROLE）在某资源上的最终权限（静态 ACL + 继承 + strategy）。
+
+        注意：
+        - 对 USER：策略中传入对应 User 实例。
+        - 对 ROLE：策略目前无法直接以 role 为主体，只能按静态 ACL 视角（或者你视业务需要决定要不要对 ROLE 也跑策略）。
+        """
+        # 1. 静态部分
+        base_mask = self._calc_permissions_for_subject(
+            subject_type, subject_id, resource, context, visited, cache
+        )
+
+        def permission_lookup(subject: User | Role, ctx: T | None) -> Permission:
+            return self._calc_permissions_for_subject(subject.type, subject.id, resource, ctx, visited=[], cache=cache)
+
+        # 2. 策略部分
+        if subject_type == SubjectType.USER:
+            user = self.storage.get_user(subject_id)
+            final_mask = self.engine.apply_strategies(
+                user,
+                resource,
+                context,
+                base_mask,
+                permission_lookup,
+            )
+            return final_mask
+
+        else:
+            return base_mask
 
     def _calc_permissions_for_subject(
         self,
@@ -145,6 +171,7 @@ class PermissionService(Generic[T]):
                     continue
 
                 if not self._check_acl_dependencies(acl, context, visited, cache):
+                    self._check_acl_dependencies(acl, context, visited, cache)
                     continue
 
                 node_allow |= acl.allow_mask
@@ -175,7 +202,7 @@ class PermissionService(Generic[T]):
 
         for dep in acl.dependencies:
             dep_res = self.storage.get_resource(dep.resource_id)
-            dep_mask = self._calc_permissions_for_subject(
+            dep_mask = self._get_effective_permissions_for_subject(
                 dep.subject_type, dep.subject_id, dep_res, context, visited, cache
             )
             if (dep_mask & dep.required_mask) != dep.required_mask:
