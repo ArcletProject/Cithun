@@ -1,8 +1,8 @@
+import fnmatch
+import re
 from collections.abc import Callable
 from functools import reduce
 from operator import or_
-import fnmatch
-import re
 from typing import TypeAlias, TypeVar, overload
 
 from arclet.cithun import Permission, PermissionEngine, ResourceNode, Role, User

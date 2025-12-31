@@ -66,7 +66,9 @@ class PermissionService(Generic[T]):
         resource = self.storage.get_resource(resource_id)
         user_id = user.id if isinstance(user, User) else user
         cache: dict[tuple[str, str, str], Permission] = {}
-        return self._get_effective_permissions_for_subject(SubjectType.USER, user_id, resource, context, visited=[], cache=cache)
+        return self._get_effective_permissions_for_subject(
+            SubjectType.USER, user_id, resource, context, visited=[], cache=cache
+        )
 
     def has_permission(
         self,
@@ -106,9 +108,7 @@ class PermissionService(Generic[T]):
         - 对 ROLE：策略目前无法直接以 role 为主体，只能按静态 ACL 视角（或者你视业务需要决定要不要对 ROLE 也跑策略）。
         """
         # 1. 静态部分
-        base_mask = self._calc_permissions_for_subject(
-            subject_type, subject_id, resource, context, visited, cache
-        )
+        base_mask = self._calc_permissions_for_subject(subject_type, subject_id, resource, context, visited, cache)
 
         def permission_lookup(subject: User | Role, ctx: T | None) -> Permission:
             return self._calc_permissions_for_subject(subject.type, subject.id, resource, ctx, visited=[], cache=cache)
