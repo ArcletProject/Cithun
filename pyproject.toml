@@ -1,6 +1,6 @@
 [project]
 name = "arclet-cithun"
-version = "1.3.1"
+version = "1.3.2"
 description = "A permission system modeled on the file permission system under Unix."
 authors = [
     {name = "RF-Tar-Railt", email = "rf_tar_railt@qq.com"},
@@ -40,7 +40,7 @@ include = ["src/**.py"]
 respect-gitignore = true
 
 [tool.ruff.lint]
-select = ["E", "W", "F", "UP", "C", "T", "PYI", "PT", "Q"]
+select = ["E", "W", "F", "UP", "C", "T", "PYI", "PT", "Q", "I"]
 ignore = ["C901", "C408", "T201", "E731", "E402", "PYI055"]
 
 [tool.ruff.lint.isort]
