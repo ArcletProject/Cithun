@@ -1,3 +1,6 @@
+from arclet.cithun.exceptions import DependencyCycleError as DependencyCycleError
+from arclet.cithun.exceptions import PermissionDeniedError as PermissionDeniedError
+from arclet.cithun.exceptions import ResourceNotFoundError as ResourceNotFoundError
 from arclet.cithun.model import InheritMode as InheritMode
 from arclet.cithun.model import Permission as Permission
 from arclet.cithun.model import ResourceNode as ResourceNode

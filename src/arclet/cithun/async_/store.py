@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import fnmatch
-from collections.abc import Callable, Iterable
+from collections.abc import Callable, Iterable, MutableSequence
 from itertools import zip_longest
 from re import Pattern
 
@@ -24,7 +24,7 @@ class AsyncStore:
         self.resources: dict[str, ResourceNode] = {}
         self.users: dict[str, User] = {}
         self.roles: dict[str, Role] = {}
-        self.acls: list[AclEntry] = []
+        self.acls: MutableSequence[AclEntry] = []
         self.tracks: dict[str, Track] = {}
 
     async def _add_resource(self, res: ResourceNode):
@@ -562,7 +562,7 @@ class AsyncStore:
         Returns:
             str: 资源树字符串。
         """
-        lines = ["/"]
+        lines = ["$"]
 
         def _format_node(node: ResourceNode, prefix: str, is_last: bool):
             children = [n for n in self.resources.values() if n.parent_id == node.id]

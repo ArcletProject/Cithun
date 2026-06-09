@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import fnmatch
-from collections.abc import Callable, Iterable
+from collections.abc import Callable, Iterable, MutableSequence
 from itertools import zip_longest
 from re import Pattern
 
@@ -14,7 +14,7 @@ class BaseStore:
         self.resources: dict[str, ResourceNode] = {}
         self.users: dict[str, User] = {}
         self.roles: dict[str, Role] = {}
-        self.acls: list[AclEntry] = []
+        self.acls: MutableSequence[AclEntry] = []
         self.tracks: dict[str, Track] = {}
 
     def _add_resource(self, res: ResourceNode):

@@ -176,7 +176,7 @@ class PermissionExecutor(Generic[T]):
         self,
         subject: User | Role,
         resource_path: str,
-        required_mask: int,
+        required_mask: Permission,
         missing_ok: bool = False,
         context: T | None = None,
     ) -> bool:
@@ -185,7 +185,7 @@ class PermissionExecutor(Generic[T]):
         Args:
             subject (User | Role): 目标主体（用户或角色）。
             resource_path (str): 资源路径。
-            required_mask (int): 需要的权限掩码。
+            required_mask (Permission): 需要的权限掩码。
             missing_ok (bool, optional): 是否允许节点不存在。默认为 False。
             context (T | None, optional): 上下文信息。默认为 None。
 
