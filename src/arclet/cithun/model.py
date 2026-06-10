@@ -129,6 +129,7 @@ class User:
 class AclDependency:
     """描述一个 ACL 对“另一个 subject 在某资源上的权限”的依赖。"""
 
+    identity: tuple[SubjectType, str, str]
     subject_type: SubjectType
     subject_id: str
     resource_id: str
@@ -144,13 +145,16 @@ class AclEntry:
     resource_id: str
     allow_mask: Permission
     deny_mask: Permission = Permission.NONE
-    dependencies: list[AclDependency] = field(default_factory=list)
+
+    @property
+    def identity(self) -> tuple[SubjectType, str, str]:
+        """返回 ACL 条目的唯一身份标识。"""
+        return self.subject_type, self.subject_id, self.resource_id
 
     def __repr__(self) -> str:
         return (
-            f"AclEntry(subject={self.subject_type.value}:{self.subject_id}, "
-            f"resource={self.resource_id}, allow={self.allow_mask!r}, deny={self.deny_mask!r}, "
-            f"deps={self.dependencies})"
+            f"AclEntry({self.subject_type.value.lower()}={self.subject_id}, "
+            f"resource={self.resource_id}, allow={self.allow_mask!r}, deny={self.deny_mask!r})"
         )
 
 

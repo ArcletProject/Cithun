@@ -197,10 +197,10 @@ class PermissionService(Generic[T]):
         visited: list[tuple[str, str, str]],
         cache: dict[tuple[str, str, str], Permission],
     ) -> bool:
-        if not acl.dependencies:
+        if acl.identity not in self.storage.acl_dependencies:
             return True
 
-        for dep in acl.dependencies:
+        for dep in self.storage.acl_dependencies[acl.identity]:
             dep_res = self.storage.get_resource(dep.resource_id)
             dep_mask = self._get_effective_permissions_for_subject(
                 dep.subject_type, dep.subject_id, dep_res, context, visited, cache
@@ -248,7 +248,7 @@ class PermissionService(Generic[T]):
             # 当前资源行前缀
             branch = "└─ " if is_last else "├─ "
             # 找出在该资源上、属于 subject 的 ACL
-            acl = self.storage.get_primary_acl(subject, node.id)
+            acl = self.storage.get_acl(subject, node.id)
 
             # 基本资源信息
             # 例如: ├─ app/  [mode=MERGE, type=DIR]
@@ -282,10 +282,10 @@ class PermissionService(Generic[T]):
                 line += f" (allow: '{acl.allow_mask:#}', deny: '{f'{acl.deny_mask:#}' if acl.deny_mask else 'NONE'}')"
             line += suffix
             lines.append(line)
-            if show_dependencies and acl and acl.dependencies:
-                for index, dep in enumerate(acl.dependencies):
+            if show_dependencies and acl and acl.identity in self.storage.acl_dependencies:
+                for index, dep in enumerate(deps := self.storage.acl_dependencies[acl.identity]):
                     dep_line = (
-                        f"{prefix}{'   '}{'└' if index == len(acl.dependencies) - 1 else '├'}"
+                        f"{prefix}{'   '}{'└' if index == len(deps) - 1 else '├'}"
                         f">{f' {dep.subject_type.value}:{dep.subject_id}  @' if dep.subject_id != subject.type and dep.subject_id != subject.id else ''}"  # noqa: E501
                         f" {dep.resource_id} >= '{dep.required_mask:#}'"
                     )

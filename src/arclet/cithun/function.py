@@ -237,7 +237,7 @@ class PermissionExecutor(Generic[T]):
         # 如果某个父节点显式 deny V，这里自然拿不到 V
         self_mask = self.service.get_effective_permissions(executor, node.id, context)
         if (self_mask & Permission.VISIT) != Permission.VISIT:
-            raise PermissionDeniedError(f"Executor '{executor.id}' lacks VISIT on '{node.id}'")
+            raise PermissionDeniedError(f"Executor {executor.name}({executor.id}) lacks VISIT on '{node.id}'")
         return self_mask
 
     def suset(
@@ -271,7 +271,7 @@ class PermissionExecutor(Generic[T]):
             else:
                 _, node = self._ensure_resource_for_set(resource_path, missing_ok=missing_ok)
 
-                primary_acl = self.storage.get_primary_acl(subject, node.id)
+                primary_acl = self.storage.get_acl(subject, node.id)
                 old_mask = (
                     (primary_acl.deny_mask if deny else primary_acl.allow_mask) if primary_acl else Permission.NONE
                 )
@@ -301,7 +301,7 @@ class PermissionExecutor(Generic[T]):
                 else:
                     continue
 
-            primary_acl = self.storage.get_primary_acl(subject, node.id)
+            primary_acl = self.storage.get_acl(subject, node.id)
             old_mask = (primary_acl.deny_mask if deny else primary_acl.allow_mask) if primary_acl else Permission.NONE
             new_mask = self._apply_chmod(old_mask, mask, mode)
 
@@ -338,7 +338,7 @@ class PermissionExecutor(Generic[T]):
             ResourceNotFoundError: 当 missing_ok=False 且节点不存在时抛出。
             ValueError: 当 mode 不支持时抛出。
         """
-        return self.suset(subject, resource_path, *Permission.parse(pattern), missing_ok=missing_ok)
+        self.suset(subject, resource_path, *Permission.parse(pattern), missing_ok=missing_ok)
 
     def set(
         self,
@@ -381,7 +381,9 @@ class PermissionExecutor(Generic[T]):
                     parent_mask = self.service.get_effective_permissions(executor, parent.id, context)
                     required_parent = Permission.VISIT | Permission.MODIFY | Permission.AVAILABLE
                     if (parent_mask & required_parent) != required_parent:
-                        raise PermissionDeniedError(f"Executor '{executor.id}' lacks V+M+A on parent '{parent.id}'")
+                        raise PermissionDeniedError(
+                            f"Executor {executor.name}({executor.id}) lacks V+M+A on parent '{parent.id}'"
+                        )
 
                 # 4. 检查执行者在自身是否有 MODIFY
                 self_mask = self.service.get_effective_permissions(executor, node.id, context)
@@ -389,7 +391,7 @@ class PermissionExecutor(Generic[T]):
                     # 不修改该节点状态
                     return
 
-                primary_acl = self.storage.get_primary_acl(target, node.id)
+                primary_acl = self.storage.get_acl(target, node.id)
                 old_mask = (
                     (primary_acl.deny_mask if deny else primary_acl.allow_mask) if primary_acl else Permission.NONE
                 )
@@ -423,13 +425,15 @@ class PermissionExecutor(Generic[T]):
                 parent_mask = self.service.get_effective_permissions(executor, parent.id, context)
                 required_parent = Permission.VISIT | Permission.MODIFY | Permission.AVAILABLE
                 if (parent_mask & required_parent) != required_parent:
-                    raise PermissionDeniedError(f"Executor '{executor.id}' lacks V+M+A on parent '{parent.id}'")
+                    raise PermissionDeniedError(
+                        f"Executor {executor.name}({executor.id}) lacks V+M+A on parent '{parent.id}'"
+                    )
             self_mask = self.service.get_effective_permissions(executor, node.id, context)
             if (self_mask & Permission.MODIFY) != Permission.MODIFY:
                 continue  # 无修改权限，跳过
 
             # 5. chmod 更新目标 subject
-            primary_acl = self.storage.get_primary_acl(target, node.id)
+            primary_acl = self.storage.get_acl(target, node.id)
             old_mask = (primary_acl.deny_mask if deny else primary_acl.allow_mask) if primary_acl else Permission.NONE
             new_mask = self._apply_chmod(old_mask, mask, mode)
             if primary_acl is None:

@@ -43,43 +43,14 @@ class SimpleDatabaseStore(BaseStore):
             FOREIGN KEY (parent_role_id) REFERENCES roles(id) ON DELETE CASCADE
         );
 
-        CREATE TABLE IF NOT EXISTS resources (
-            id TEXT PRIMARY KEY,
-            name TEXT NOT NULL,
-            parent_id TEXT NULL,
-            inherit_mode INTEGER DEFAULT 0,  -- 0: INHERIT, 1: MERGE, 2: OVERRIDE
-            type TEXT NOT NULL DEFAULT 'GENERIC',  -- FILE / DIR / PROJECT / etc.
-            FOREIGN KEY (parent_id) REFERENCES resources(id) ON DELETE CASCADE
-        );
-        CREATE INDEX IF NOT EXISTS idx_resources_parent_id ON resources(parent_id);
-
         CREATE TABLE IF NOT EXISTS acls (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
             subject_type TEXT NOT NULL,  -- 'USER' or 'ROLE'
             subject_id TEXT NOT NULL,
             resource_id TEXT NOT NULL,
             allow_mask INTEGER NOT NULL,
             deny_mask INTEGER DEFAULT 0,
-            FOREIGN KEY (resource_id) REFERENCES resources(id) ON DELETE CASCADE
+            PRIMARY KEY (subject_type, subject_id, resource_id)
         );
-
-        CREATE INDEX IF NOT EXISTS idx_acls_resource_id ON acls(resource_id);
-        CREATE INDEX IF NOT EXISTS idx_acls_subject ON acls(subject_type, subject_id);
-
-        CREATE TABLE IF NOT EXISTS acl_dependencies (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            acl_id INTEGER NOT NULL,
-            dep_subject_type TEXT NOT NULL,
-            dep_subject_id TEXT NOT NULL,
-            dep_resource_id TEXT NOT NULL,
-            required_mask INTEGER NOT NULL,
-            FOREIGN KEY (acl_id) REFERENCES acls(id) ON DELETE CASCADE,
-            FOREIGN KEY (dep_resource_id) REFERENCES resources(id) ON DELETE CASCADE
-        );
-
-        CREATE INDEX IF NOT EXISTS idx_acl_deps_acl_id  ON acl_dependencies(acl_id);
-        CREATE INDEX IF NOT EXISTS idx_acl_deps_dep_subject ON acl_dependencies(dep_subject_type, dep_subject_id);
-        CREATE INDEX IF NOT EXISTS idx_acl_deps_dep_resource ON acl_dependencies(dep_resource_id);
 
         CREATE TABLE IF NOT EXISTS tracks (
             id TEXT PRIMARY KEY,
@@ -131,35 +102,19 @@ class SimpleDatabaseStore(BaseStore):
         return track
 
     def _add_acl(self, acl: AclEntry):
-        target_acl = next(
-            (
-                i
-                for i in self.acls
-                if i.subject_type == acl.subject_type
-                and i.subject_id == acl.subject_id
-                and i.resource_id == acl.resource_id
-            ),
-            None,
-        )
-        if target_acl:
-            return target_acl
+        if acl.identity in self.acls:
+            return self.acls[acl.identity]
         cursor = self.conn.cursor()
         cursor.execute(
             "INSERT INTO acls (subject_type, subject_id, resource_id, allow_mask, deny_mask) VALUES (?, ?, ?, ?, ?);",
             (acl.subject_type.value, acl.subject_id, acl.resource_id, acl.allow_mask, acl.deny_mask),
         )
         self.conn.commit()
-        self.acls.append(acl)
+        self.acls[acl.identity] = acl
 
     def _add_resource(self, res: ResourceNode):
         if res.id in self.resources:
             return self.resources[res.id]
-        cursor = self.conn.cursor()
-        cursor.execute(
-            "INSERT INTO resources (id, name, parent_id, inherit_mode, type) VALUES (?, ?, ?, ?, ?);",
-            (res.id, res.name, res.parent_id, res.inherit_mode.value, res.type),
-        )
-        self.conn.commit()
         self.resources[res.id] = res
         return res
 
@@ -171,36 +126,20 @@ class SimpleDatabaseStore(BaseStore):
         dep_resource_path: str,
         required_mask: Permission,
     ) -> AclEntry:
-        target_acl = self.get_primary_acl(target_subject, target_resource_id)
+        target_acl = self.get_acl(target_subject, target_resource_id)
         if not target_acl:
             raise ValueError("Target ACL does not exist.")
         dep_res = self.define(dep_resource_path)
         dep = AclDependency(
+            identity=target_acl.identity,
             subject_type=dep_subject.type,
             subject_id=dep_subject.id,
             resource_id=dep_res.id,
             required_mask=required_mask,
         )
-        if dep in target_acl.dependencies:
+        if dep in self.acl_dependencies[target_acl.identity]:
             return target_acl
-        target_acl.dependencies.append(dep)
-
-        cursor = self.conn.cursor()
-        cursor.execute(
-            "SELECT id FROM acls WHERE subject_type = ? AND subject_id = ? AND resource_id = ?;",
-            (target_acl.subject_type.value, target_acl.subject_id, target_acl.resource_id),
-        )
-        row = cursor.fetchone()
-        if row is None:
-            raise ValueError("ACL entry not found after creation.")
-        acl_id = row[0]
-
-        cursor.execute(
-            "INSERT INTO acl_dependencies (acl_id, dep_subject_type, dep_subject_id, "
-            "dep_resource_id, required_mask) VALUES (?, ?, ?, ?, ?);",
-            (acl_id, dep.subject_type.value, dep.subject_id, dep.resource_id, dep.required_mask),
-        )
-        self.conn.commit()
+        self.acl_dependencies[target_acl.identity].append(dep)
         return target_acl
 
     def inherit(self, child: User | Role, parent: Role):
@@ -279,25 +218,10 @@ class SimpleDatabaseStore(BaseStore):
             cursor.execute("SELECT parent_role_id FROM role_inherits WHERE role_id = ?;", (role.id,))
             parent_role_ids = [r[0] for r in cursor.fetchall()]
             role.parent_role_ids.extend(parent_role_ids)
-        cursor.execute("SELECT id, name, parent_id, inherit_mode, type FROM resources;")
+        cursor.execute("SELECT subject_type, subject_id, resource_id, allow_mask, deny_mask FROM acls;")
         for row in cursor.fetchall():
-            resource = ResourceNode(*row)
-            self.resources[resource.id] = resource
-        cursor.execute("SELECT id, subject_type, subject_id, resource_id, allow_mask, deny_mask FROM acls;")
-        acl_ids = []
-        for row in cursor.fetchall():
-            acl = AclEntry(*row[1:], dependencies=[])
-            self.acls.append(acl)
-            acl_ids.append(row[0])
-        for acl, acl_id in zip(self.acls, acl_ids):
-            cursor.execute(
-                "SELECT dep_subject_type, dep_subject_id, dep_resource_id, required_mask "
-                "FROM acl_dependencies WHERE acl_id = ?;",
-                (acl_id,),
-            )
-            for dep_row in cursor.fetchall():
-                dep = AclDependency(*dep_row)
-                acl.dependencies.append(dep)
+            acl = AclEntry(*row)
+            self.acls[acl.identity] = acl
         cursor.execute("SELECT id, name FROM tracks;")
         for row in cursor.fetchall():
             track = Track(*row, levels=[])

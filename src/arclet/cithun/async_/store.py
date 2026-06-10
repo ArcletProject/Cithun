@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 import fnmatch
-from collections.abc import Callable, Iterable, MutableSequence
+from collections import defaultdict
+from collections.abc import Callable, Iterable
 from itertools import zip_longest
 from re import Pattern
+from typing import Any
 
 from arclet.cithun.config import Config
 from arclet.cithun.model import (
@@ -24,7 +26,8 @@ class AsyncStore:
         self.resources: dict[str, ResourceNode] = {}
         self.users: dict[str, User] = {}
         self.roles: dict[str, Role] = {}
-        self.acls: MutableSequence[AclEntry] = []
+        self.acls: dict[Any, AclEntry] = {}
+        self.acl_dependencies: defaultdict[Any, list[AclDependency]] = defaultdict(list)
         self.tracks: dict[str, Track] = {}
 
     async def _add_resource(self, res: ResourceNode):
@@ -194,7 +197,7 @@ class AsyncStore:
             matched = await self.match_resources(resource_path)
 
         for res in matched:
-            if await self.get_primary_acl(subject, res.id):
+            if await self.get_acl(subject, res.id):
                 continue
             acl = AclEntry(
                 subject_type=subject.type,
@@ -228,17 +231,18 @@ class AsyncStore:
         Raises:
             ValueError: 当目标 ACL 不存在时抛出。
         """
-        target_acl = await self.get_primary_acl(target_subject, target_resource_id)
+        target_acl = await self.get_acl(target_subject, target_resource_id)
         if not target_acl:
             raise ValueError("Target ACL does not exist.")
         dep_res = await self.define(dep_resource_path)
         dep = AclDependency(
+            identity=target_acl.identity,
             subject_type=dep_subject.type,
             subject_id=dep_subject.id,
             resource_id=dep_res.id,
             required_mask=required_mask,
         )
-        target_acl.dependencies.append(dep)
+        self.acl_dependencies[target_acl.identity].append(dep)
         return target_acl
 
     def _ensure_user(self, user: User) -> User:
@@ -325,46 +329,19 @@ class AsyncStore:
         return self.roles[rid]
 
     async def _add_acl(self, acl: AclEntry):
-        self.acls.append(acl)
+        self.acls[acl.identity] = acl
 
-    async def get_acl(self, subject: User | Role, resource_id: str) -> list[AclEntry]:
-        """获取指定主体在指定资源上的所有 ACL。
-
-        Args:
-            subject (User | Role): 主体。
-            resource_id (str): 资源 ID。
-
-        Returns:
-            list[AclEntry]: ACL 列表。
-        """
-        return [
-            acl
-            for acl in self.acls
-            if acl.subject_type == subject.type and acl.subject_id == subject.id and acl.resource_id == resource_id
-        ]
-
-    async def get_primary_acl(
-        self,
-        subject: User | Role,
-        resource_id: str,
-    ) -> AclEntry | None:
-        """获取指定主体在指定资源上的主 ACL（第一个匹配的 ACL）。
+    async def get_acl(self, subject: User | Role, resource_id: str) -> AclEntry | None:
+        """获取指定主体在指定资源上的 ACL。
 
         Args:
             subject (User | Role): 主体。
             resource_id (str): 资源 ID。
 
         Returns:
-            AclEntry | None: 主 ACL 条目，若不存在则返回 None。
+            AclEntry | None: ACL 条目对象，如果不存在则返回 None。
         """
-        return next(
-            (
-                acl
-                for acl in self.acls
-                if acl.subject_type == subject.type and acl.subject_id == subject.id and acl.resource_id == resource_id
-            ),
-            None,
-        )
+        return self.acls.get((subject.type, subject.id, resource_id))
 
     async def iter_acls_for_resource(self, resource_id: str) -> Iterable[AclEntry]:
         """迭代指定资源的所有 ACL。
@@ -375,7 +352,7 @@ class AsyncStore:
         Returns:
             Iterable[AclEntry]: ACL 迭代器。
         """
-        return (acl for acl in self.acls if acl.resource_id == resource_id)
+        return (acl for acl in self.acls.values() if acl.resource_id == resource_id)
 
     async def create_track(self, tid: str, name: str | None = None) -> Track:
         """创建或获取 Track。

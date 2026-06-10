@@ -5,7 +5,7 @@ import os
 from dataclasses import asdict
 from pathlib import Path
 
-from arclet.cithun.model import AclDependency, AclEntry, ResourceNode, Role, Track, TrackLevel, User
+from arclet.cithun.model import AclEntry, Role, Track, TrackLevel, User
 from arclet.cithun.store import BaseStore
 
 
@@ -22,19 +22,11 @@ class JsonStore(BaseStore):
             for row in role_rows:
                 role = Role(**row)
                 self.roles[role.id] = role
-            resource_rows = data.get("resources", [])
-            for row in resource_rows:
-                resource = ResourceNode(**row)
-                self.resources[resource.id] = resource
 
             acl_rows = data.get("acls", [])
             for row in acl_rows:
-                dependencies = row.pop("dependencies", [])
                 acl = AclEntry(**row)
-                for dep_row in dependencies:
-                    dep = AclDependency(**dep_row)
-                    acl.dependencies.append(dep)
-                self.acls.append(acl)
+                self.acls[acl.identity] = acl
             track_rows = data.get("tracks", [])
             for row in track_rows:
                 levels = row.pop("levels", [])
@@ -51,8 +43,7 @@ class JsonStore(BaseStore):
         data = {
             "users": [asdict(user) for user in self.users.values()],
             "roles": [asdict(role) for role in self.roles.values()],
-            "resources": [asdict(res) for res in self.resources.values()],
-            "acls": [asdict(acl) for acl in self.acls],
+            "acls": [asdict(acl) for acl in self.acls.values()],
             "tracks": [asdict(track) for track in self.tracks.values()],
         }
 
