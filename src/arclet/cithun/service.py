@@ -45,6 +45,7 @@ class PermissionService(Generic[T]):
     def __init__(self, storage: BaseStore, engine: PermissionEngine[T]):
         self.storage = storage
         self.engine = engine
+        self.depend = self.engine.depend
 
     def get_effective_permissions(
         self,
@@ -171,7 +172,6 @@ class PermissionService(Generic[T]):
                     continue
 
                 if not self._check_acl_dependencies(acl, context, visited, cache):
-                    self._check_acl_dependencies(acl, context, visited, cache)
                     continue
 
                 node_allow |= acl.allow_mask
@@ -197,13 +197,22 @@ class PermissionService(Generic[T]):
         visited: list[tuple[str, str, str]],
         cache: dict[tuple[str, str, str], Permission],
     ) -> bool:
-        if acl.identity not in self.storage.acl_dependencies:
+        current = visited[-1][:2]  # (subject_type, subject_id)
+        current_subject = (
+            self.storage.get_user(current[1])
+            if current[0] == SubjectType.USER.value
+            else self.storage.get_role(current[1])
+        )  # noqa: E501
+        available_dependencies = [dep for dep in self.engine.dependencies if dep.target_resource_id == acl.resource_id]
+        if not available_dependencies:
             return True
-
-        for dep in self.storage.acl_dependencies[acl.identity]:
-            dep_res = self.storage.get_resource(dep.resource_id)
+        for dep in available_dependencies:
+            if dep.target_subject and dep.target_subject != current_subject:
+                continue
+            depend_subject = dep.get_depend_subject(context, current_subject)
+            dep_res = self.storage.get_resource(dep.depend_resource_id)
             dep_mask = self._get_effective_permissions_for_subject(
-                dep.subject_type, dep.subject_id, dep_res, context, visited, cache
+                depend_subject.type, depend_subject.id, dep_res, context, visited, cache
             )
             if (dep_mask & dep.required_mask) != dep.required_mask:
                 return False
@@ -282,12 +291,18 @@ class PermissionService(Generic[T]):
                 line += f" (allow: '{acl.allow_mask:#}', deny: '{f'{acl.deny_mask:#}' if acl.deny_mask else 'NONE'}')"
             line += suffix
             lines.append(line)
-            if show_dependencies and acl and acl.identity in self.storage.acl_dependencies:
-                for index, dep in enumerate(deps := self.storage.acl_dependencies[acl.identity]):
+            if show_dependencies and acl:
+                deps = [
+                    dep
+                    for dep in self.engine.dependencies
+                    if dep.target_resource_id == node.id and (not dep.target_subject or dep.target_subject == subject)
+                ]
+                for index, dep in enumerate(deps):
+                    depend_subject = dep.get_depend_subject(context, subject)
                     dep_line = (
                         f"{prefix}{'   '}{'└' if index == len(deps) - 1 else '├'}"
-                        f">{f' {dep.subject_type.value}:{dep.subject_id}  @' if dep.subject_id != subject.type and dep.subject_id != subject.id else ''}"  # noqa: E501
-                        f" {dep.resource_id} >= '{dep.required_mask:#}'"
+                        f">{f' {depend_subject.type.value}:{depend_subject.id}  @' if depend_subject != subject else ''}"  # noqa: E501
+                        f" {dep.depend_resource_id} >= '{dep.required_mask:#}'"
                     )
                     lines.append(dep_line)
             # 递归打印子节点

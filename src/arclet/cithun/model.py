@@ -103,37 +103,26 @@ class SubjectType(str, Enum):
     ROLE = "ROLE"
 
 
-@dataclass
+@dataclass(unsafe_hash=True, eq=True)
 class Role:
     """角色。"""
 
     id: str
-    name: str
-    parent_role_ids: list[str] = field(default_factory=list)
+    name: str = field(hash=False, compare=False)
+    parent_role_ids: list[str] = field(default_factory=list, hash=False, compare=False)
 
     type: ClassVar[SubjectType] = SubjectType.ROLE
 
 
-@dataclass
+@dataclass(unsafe_hash=True, eq=True)
 class User:
     """用户。"""
 
     id: str
-    name: str
-    role_ids: list[str] = field(default_factory=list)
+    name: str = field(hash=False, compare=False)
+    role_ids: list[str] = field(default_factory=list, hash=False, compare=False)
 
     type: ClassVar[SubjectType] = SubjectType.USER
-
-
-@dataclass(eq=True)
-class AclDependency:
-    """描述一个 ACL 对“另一个 subject 在某资源上的权限”的依赖。"""
-
-    identity: tuple[SubjectType, str, str]
-    subject_type: SubjectType
-    subject_id: str
-    resource_id: str
-    required_mask: Permission
 
 
 @dataclass

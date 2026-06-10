@@ -79,7 +79,7 @@ with monitor.transaction():
     assert not monitor.test(user, "command.foo", Permission.VISIT)
     assert monitor.test(user, "command.foo", Permission.MODIFY, context={"role": "owner"})
 
-    monitor.depend(user, "command.test.sub",  user, "command.foo", Permission.VISIT)
+    monitor.depend("command.test.sub", "command.foo", required_mask=Permission.VISIT)
 
 print(monitor.resource_tree())
 print(monitor.permission_on(user, True, True, False))

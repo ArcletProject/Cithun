@@ -71,7 +71,7 @@ except PermissionError as e:
     # raise PermissionError as dale's target node is dependent on the unavailable node
     assert str(e) == "Permission denied for cithun to access foo.bar.baz.quux"
 
-monitor.depend(user, "foo.bar.qux", user, "foo.bar.baz.qux", Permission.VISIT)
+monitor.depend("foo.bar.qux", "foo.bar.baz.qux", required_mask=Permission.VISIT)
 monitor.suset(user, "foo.bar.baz.qux", Permission.VISIT)
 try:
     caven(user)

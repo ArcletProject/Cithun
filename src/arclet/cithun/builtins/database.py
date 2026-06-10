@@ -4,7 +4,7 @@ import os
 import sqlite3
 from pathlib import Path
 
-from arclet.cithun.model import AclDependency, AclEntry, Permission, ResourceNode, Role, Track, TrackLevel, User
+from arclet.cithun.model import AclEntry, Permission, ResourceNode, Role, Track, TrackLevel, User
 from arclet.cithun.store import BaseStore
 
 
@@ -117,30 +117,6 @@ class SimpleDatabaseStore(BaseStore):
             return self.resources[res.id]
         self.resources[res.id] = res
         return res
-
-    def depend(
-        self,
-        target_subject: User | Role,
-        target_resource_id: str,
-        dep_subject: User | Role,
-        dep_resource_path: str,
-        required_mask: Permission,
-    ) -> AclEntry:
-        target_acl = self.get_acl(target_subject, target_resource_id)
-        if not target_acl:
-            raise ValueError("Target ACL does not exist.")
-        dep_res = self.define(dep_resource_path)
-        dep = AclDependency(
-            identity=target_acl.identity,
-            subject_type=dep_subject.type,
-            subject_id=dep_subject.id,
-            resource_id=dep_res.id,
-            required_mask=required_mask,
-        )
-        if dep in self.acl_dependencies[target_acl.identity]:
-            return target_acl
-        self.acl_dependencies[target_acl.identity].append(dep)
-        return target_acl
 
     def inherit(self, child: User | Role, parent: Role):
         if isinstance(child, Role):

@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import fnmatch
-from collections import defaultdict
 from collections.abc import Callable, Iterable
 from itertools import zip_longest
 from re import Pattern
@@ -9,7 +8,6 @@ from typing import Any
 
 from arclet.cithun.config import Config
 from arclet.cithun.model import (
-    AclDependency,
     AclEntry,
     InheritMode,
     Permission,
@@ -27,7 +25,6 @@ class AsyncStore:
         self.users: dict[str, User] = {}
         self.roles: dict[str, Role] = {}
         self.acls: dict[Any, AclEntry] = {}
-        self.acl_dependencies: defaultdict[Any, list[AclDependency]] = defaultdict(list)
         self.tracks: dict[str, Track] = {}
 
     async def _add_resource(self, res: ResourceNode):
@@ -207,43 +204,6 @@ class AsyncStore:
                 deny_mask=deny_mask,
             )
             await self._add_acl(acl)
-
-    async def depend(
-        self,
-        target_subject: User | Role,
-        target_resource_id: str,
-        dep_subject: User | Role,
-        dep_resource_path: str,
-        required_mask: Permission,
-    ) -> AclEntry:
-        """添加 ACL 依赖。
-
-        Args:
-            target_subject (User | Role): 目标主体。
-            target_resource_id (str): 目标资源 ID。
-            dep_subject (User | Role): 依赖主体。
-            dep_resource_path (str): 依赖资源路径。
-            required_mask (Permission): 依赖所需的权限掩码。
-
-        Returns:
-            AclEntry: 更新后的目标 ACL 条目。
-
-        Raises:
-            ValueError: 当目标 ACL 不存在时抛出。
-        """
-        target_acl = await self.get_acl(target_subject, target_resource_id)
-        if not target_acl:
-            raise ValueError("Target ACL does not exist.")
-        dep_res = await self.define(dep_resource_path)
-        dep = AclDependency(
-            identity=target_acl.identity,
-            subject_type=dep_subject.type,
-            subject_id=dep_subject.id,
-            resource_id=dep_res.id,
-            required_mask=required_mask,
-        )
-        self.acl_dependencies[target_acl.identity].append(dep)
-        return target_acl
 
     def _ensure_user(self, user: User) -> User:
         if user.id in self.users:
