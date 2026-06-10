@@ -8,16 +8,24 @@ from .json import JsonStore
 
 
 class System(Attacher, JsonStore, PermissionService[dict], PermissionExecutor[dict]):
-    def __init__(self, path):
-        JsonStore.__init__(self, path)
+    def __init__(self):
+        JsonStore.__init__(self)
         PermissionService.__init__(self, engine=PermissionEngine(), storage=self)
         PermissionExecutor.__init__(self, self, self)
         Attacher.__init__(self, self.engine)
 
+    def clear(self):
+        self.users.clear()
+        self.roles.clear()
+        self.acls.clear()
+        self.tracks.clear()
+        self.service.engine.dependencies.clear()
+
     @contextmanager
-    def transaction(self):
+    def isolate(self, scope: str):
+        self.clear()
         yield
-        self.save()
+        self.save(scope)
 
 
 class DBSystem(Attacher, SimpleDatabaseStore, PermissionService[dict], PermissionExecutor[dict]):

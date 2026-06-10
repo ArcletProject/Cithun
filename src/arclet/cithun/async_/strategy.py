@@ -41,9 +41,17 @@ class AclDependency(Generic[T]):
 
     target_resource_id: str
     depend_resource_id: str
-    target_subject: User | Role | None = None
+    target_subject: User | Role | Callable[[T | None, User | Role], Awaitable[bool]] | None = None
     depend_subject: User | Role | Callable[[T | None, User | Role], Awaitable[User | Role]] | None = None
     required_mask: Permission = Permission.AVAILABLE
+
+    async def check_target_subject(self, context: T | None, current_subject: User | Role) -> bool:
+        if self.target_subject is None:
+            return True
+        elif callable(self.target_subject):
+            return await self.target_subject(context, current_subject)
+        else:
+            return self.target_subject == current_subject
 
     async def get_depend_subject(self, context: T | None, current_subject: User | Role) -> User | Role:
         if self.depend_subject is None:
@@ -77,7 +85,7 @@ class AsyncPermissionEngine(Generic[T]):
     @overload
     def depend(
         self,
-        target_subject: User | Role,
+        target_subject: User | Role | Callable[[T | None, User | Role], Awaitable[bool]],
         target_resource_id: str,
         depend_resource_id: str,
         /,
@@ -88,7 +96,7 @@ class AsyncPermissionEngine(Generic[T]):
             还取决于 target_subject 在 depend_resource_id 上是否拥有 required_mask 权限。
 
         Args:
-            target_subject (User | Role): 目标主体。
+            target_subject (User | Role | Callable[[T | None, User | Role], Awaitable[bool]]): 目标主体或目标检查函数。
             target_resource_id (str): 目标资源 ID。
             depend_resource_id (str): 依赖资源 ID。
             required_mask (Permission): 依赖所需的权限掩码。
@@ -117,7 +125,7 @@ class AsyncPermissionEngine(Generic[T]):
     @overload
     def depend(
         self,
-        target_subject: User | Role,
+        target_subject: User | Role | Callable[[T | None, User | Role], Awaitable[bool]],
         target_resource_id: str,
         dep_subject: User | Role | Callable[[T | None, User | Role], Awaitable[User | Role]],
         depend_resource_id: str,
@@ -129,7 +137,7 @@ class AsyncPermissionEngine(Generic[T]):
             还取决于 dep_subject 在 depend_resource_id 上是否拥有 required_mask 权限。
 
         Args:
-            target_subject (User | Role): 目标主体。
+            target_subject (User | Role | Callable[[T | None, User | Role], Awaitable[bool]]): 目标主体或目标检查函数。
             target_resource_id (str): 目标资源 ID。
             dep_subject (User | Role | Callable[[T, User | Role], Awaitable[User | Role]]): 依赖主体或主体获取函数。
             depend_resource_id (str): 依赖资源 ID。
@@ -149,11 +157,11 @@ class AsyncPermissionEngine(Generic[T]):
             dep_subject = None
         elif len(args) == 3:
             if isinstance(args[1], str):
-                target_subject = None
-                target_resource_id, dep_subject, depend_resource_id = args
-            else:
                 target_subject, target_resource_id, depend_resource_id = args
                 dep_subject = None
+            else:
+                target_subject = None
+                target_resource_id, dep_subject, depend_resource_id = args
         elif len(args) == 4:
             target_subject, target_resource_id, dep_subject, depend_resource_id = args
         else:

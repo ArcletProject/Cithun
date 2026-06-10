@@ -201,17 +201,16 @@ class AsyncPermissionService(Generic[T]):
         visited: list[tuple[str, str, str]],
         cache: dict[tuple[str, str, str], Permission],
     ) -> bool:
-        current = visited[-1][:2]  # (subject_type, subject_id)
         current_subject = (
-            await self.storage.get_user(current[1])
-            if current[0] == SubjectType.USER.value
-            else await self.storage.get_role(current[1])
+            await self.storage.get_user(acl.subject_id)
+            if acl.subject_type is SubjectType.USER
+            else await self.storage.get_role(acl.subject_id)
         )  # noqa: E501
         available_dependencies = [dep for dep in self.engine.dependencies if dep.target_resource_id == acl.resource_id]
         if not available_dependencies:
             return True
         for dep in available_dependencies:
-            if dep.target_subject and dep.target_subject != current_subject:
+            if not await dep.check_target_subject(context, current_subject):
                 continue
             depend_subject = await dep.get_depend_subject(context, current_subject)
             dep_res = await self.storage.get_resource(dep.depend_resource_id)
@@ -299,7 +298,7 @@ class AsyncPermissionService(Generic[T]):
                 deps = [
                     dep
                     for dep in self.engine.dependencies
-                    if dep.target_resource_id == node.id and (not dep.target_subject or dep.target_subject == subject)
+                    if dep.target_resource_id == node.id and await dep.check_target_subject(context, subject)
                 ]
                 for index, dep in enumerate(deps):
                     depend_subject = await dep.get_depend_subject(context, subject)

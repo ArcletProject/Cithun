@@ -3,7 +3,7 @@ from pathlib import Path
 from arclet.cithun import Permission, User, ResourceNode
 from arclet.cithun.builtins import System
 
-monitor = System("./function_monitor.json")
+monitor = System()
 monitor.define("foo.bar.baz")
 monitor.define("foo.bar.baz.qux")
 monitor.define("command.test.sub")
@@ -39,7 +39,7 @@ def command_foo_handler(user: User, context: dict | None, current_mask: Permissi
 #     return True
 
 
-with monitor.transaction():
+with monitor.isolate("function_monitor"):
     default = monitor.create_role("role:default", "Default")
     admin = monitor.create_role("role:admin", "Administrator")
     monitor.inherit(admin, default)
@@ -81,6 +81,6 @@ with monitor.transaction():
 
     monitor.depend("command.test.sub", "command.foo", required_mask=Permission.VISIT)
 
-print(monitor.resource_tree())
-print(monitor.permission_on(user, True, True, False))
-print(monitor.permission_on(user, True, True, False, context={"role": "owner"}))
+    print(monitor.resource_tree())
+    print(monitor.permission_on(user, True, True, False))
+    print(monitor.permission_on(user, True, True, False, context={"role": "owner"}))

@@ -4,7 +4,7 @@ from typing import Callable, TypeVar, Concatenate, ParamSpec
 from arclet.cithun import Permission, User
 from arclet.cithun.builtins import System
 
-monitor = System("check_monitor.json")
+monitor = System()
 
 T = TypeVar("T")
 P = ParamSpec("P")
