@@ -14,9 +14,9 @@
 from arclet.cithun import Permission
 from arclet.cithun.builtins import System
 
-system = System("data.json")
+system = System()
 
-with system.transaction():
+with system.isolate("data"):
     AUTH_1 = system.create_role("ROLE_AUTH_1", "AUTH_1")
     AUTH_2 = system.create_role("ROLE_AUTH_2", "AUTH_2")
     AUTH_3 = system.create_role("ROLE_AUTH_3", "AUTH_3")
@@ -41,7 +41,7 @@ with system.transaction():
     system.assign(alice, "app.data", Permission.MODIFY)
     system.assign(bob, "app.config", Permission.MODIFY)
 
-    system.depend(alice, "app.data", AUTH_4, "app.secret", Permission.VISIT)
+    system.depend("app.data", AUTH_4, "app.secret", Permission.VISIT)
     system.depend(bob, "app.config", alice, "app.data",Permission.VISIT)
 
 ```
